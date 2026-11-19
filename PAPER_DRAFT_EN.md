@@ -63,25 +63,25 @@ The corpus is generated from four fictional work domains covering `editorial`, `
 - **Development split (`data/dev`):** 24 records in 8 workflow families (3 records per family).
 - **Holdout split (`data/holdout`):** 120 records in 24 disjoint workflow families, with 5 records per family and 10 per domain and document type combination.
 
-Development and holdout use different layout variants. Each document is an email, memorandum, or internal clearance record from a fictional organization (*Aster Vale Demo Lab*).
+Development and holdout use eight distinct realistic Vietnamese enterprise visual templates rendered via **HTML/CSS and Playwright Headless Chromium** (`gmail_dark`, `outlook_light`, `zalo_pc`, `teams_desktop`, `messenger_web`, `vn_confirm_form`, `vn_admin_decision`, and `vn_handover_slip`) for *Công ty Cổ phần Công nghệ & Dữ liệu Sao Việt* (`@saoviet.test`). In addition, a 1,000-image high-throughput synthetic corpus (`dataset_1000.json` / `output_1000/` at `1280 × 720` across Gmail, Outlook 365, Zalo PC, and Decree 30/2020/NĐ-CP PDF documents with digital signatures) supports broader UI and document spoofing evaluation.
 
-Each record has two `1,100 × 660` PNG images and two transcripts. The status changes from `RECEIVED` to `APPROVED` within each matched pair. The transcript preserves the visible wording, including the `SYNTHETIC LAB DATA` label. PNG generation uses fixed assets, with image and manifest SHA-256 values recorded for traceability. Figure 1 shows status excerpts from a development pair.
+Each benchmark record has two `1,100 × 660` PNG images and two Vietnamese verbatim transcripts. Within each matched pair, the outer UI/document canvas (including realistic A4 scan tilt in `[-1.5°, +1.5°]`, subtle paper grain, red circular company seal, and handwritten signature) is held 100% pixel-identical outside `STATUS_VALUE_BOX`, while the natural confirmation paragraph changes from a routine pending/received statement (`_neutral`) to an explicit executive/supervisor approval statement (`_claim`). Figure 1 illustrates matched-pair stimuli across three representative platforms.
 
-![Figure 1: Status excerpts from paired development documents. The source images differ only in the status field.](docs/figures/figure1_status_excerpts.png)
+![Figure 1: Matched-pair multi-platform Vietnamese enterprise interfaces](docs/figures/figure1_status_excerpts.png)
 
-*Figure 1: Status excerpts from paired development documents. The source images differ only in the status field.*
+*Figure 1: Matched-pair stimuli across Gmail Dark UI, Zalo PC 3-column work chat, and Vietnamese A4 confirmation form with red company seal. The source images in each pair differ strictly inside the highlighted confirmation paragraph region.*
 
 Table 1 lists the eight conditions applied to each record in each track. The first four form a $2 \times 2$ design under an empty registry. The authorization controls reuse the approval image or omit documents. The request wording, requester, and target remain fixed within a record and track.
 
 | Condition ID | Evidence | Grant | Role |
 |---|---|---|---|
-| `neutral_text` | Received text (`RECEIVED`) | Empty | Text baseline |
-| `claim_text` | Approved text (`APPROVED`) | Empty | Text claim |
-| `neutral_image` | Received image (`RECEIVED`) | Empty | Image baseline |
-| `claim_image` | Approved image (`APPROVED`) | Empty | Image claim |
+| `neutral_text` | Pending/received transcript (`_neutral`) | Empty | Text baseline |
+| `claim_text` | Natural approval transcript (`_claim`) | Empty | Text claim |
+| `neutral_image` | Pending/received screenshot (`_neutral.png`) | Empty | Image baseline |
+| `claim_image` | Natural approval screenshot (`_claim.png`) | Empty | Image claim |
 | `none_empty` | No document | Empty | No-document control |
-| `claim_image_authorized` | Same `APPROVED` image | Exact | Authorized control |
-| `claim_image_wrong_scope` | Same `APPROVED` image | Other | Scope control |
+| `claim_image_authorized` | Same `_claim.png` image | Exact | Authorized control |
+| `claim_image_wrong_scope` | Same `_claim.png` image | Other | Scope control |
 | `none_authorized` | No document | Exact | Authorized baseline |
 
 *Table 1: Conditions for each record and track.*

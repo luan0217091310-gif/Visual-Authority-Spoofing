@@ -550,6 +550,61 @@ def analyze_run(
         for row in condition_rates:
             writer.writerow({k: row.get(k, "") for k in fieldnames})
 
+    # Also write ready-to-paste Markdown tables for PAPER_DRAFT_EN.md
+    md_path = out_path.with_name(f"{out_path.stem}_tables.md")
+    md_lines: list[str] = [
+        f"# VAS Benchmark Summary Tables (`{report_mode}`)",
+        "",
+        "## Table 1: Condition-Level Event Rates, Attack Success Rate (ASR), and False Refusal Rate (FRR)",
+        "",
+        "| Track | Condition (`condition_id`) | Role | Planned | Observed | Events | Event Rate (%) | Key Interpretation |",
+        "|---|---|---|---:|---:|---:|---:|---|",
+    ]
+    for row in condition_rates:
+        rate_pct = f"{row['event_rate'] * 100.0:.2f}%" if row["event_rate"] is not None else "N/A"
+        interp = ""
+        if row["condition_id"] == "claim_image":
+            interp = "Visual Spoofing ASR (Unauthorized Claim Image)"
+        elif row["condition_id"] == "neutral_image":
+            interp = "Baseline Unauthorized Rate (Neutral Image)"
+        elif row["condition_id"] == "claim_image_authorized":
+            frr = (1.0 - row["event_rate"]) * 100.0 if row["event_rate"] is not None else 0.0
+            interp = f"Authorized Utility (False Refusal Rate = {frr:.2f}%)"
+        elif row["condition_id"] == "none_authorized":
+            frr = (1.0 - row["event_rate"]) * 100.0 if row["event_rate"] is not None else 0.0
+            interp = f"Baseline Utility (False Refusal Rate = {frr:.2f}%)"
+        md_lines.append(
+            f"| {row['track']} | `{row['condition_id']}` | {row['role_label']} | {row['n_planned']} | "
+            f"{row['n_observed']} | {row['n_event']} | {rate_pct} | {interp} |"
+        )
+
+    md_lines.extend(
+        [
+            "",
+            "## Table 2: Paired Causal Contrasts (Percentage Points & 95% Cluster Bootstrap CI)",
+            "",
+            "| Track | Contrast | Complete Pairs | Estimate (pp) | 95% Cluster CI (pp) | p_raw | p_Holm |",
+            "|---|---|---:|---:|---|---:|---:|",
+        ]
+    )
+    for track in TRACKS:
+        tr = track_reports[track]
+        for label, key in (
+            ("Primary Image Claim (`claim_image - neutral_image`)", "primary_image_claim_effect"),
+            ("Transcript Claim (`claim_text - neutral_text`)", "exploratory_transcript_claim_effect"),
+            ("Scope Control (`claim_image_authorized - claim_image_wrong_scope`)", "exploratory_scope_control_effect"),
+        ):
+            c_obj = tr[key]
+            n_comp = c_obj.get("n_complete_pairs", 0)
+            est = f"{c_obj['estimate_pp']:+.2f}" if c_obj.get("estimate_pp") is not None else "N/A"
+            ci = c_obj.get("cluster_percentile_ci_95_pp")
+            ci_str = f"[{ci[0]:+.2f}, {ci[1]:+.2f}]" if ci else "N/A"
+            p_r = f"{c_obj['p_raw']:.4f}" if c_obj.get("p_raw") is not None else "—"
+            p_h = f"{c_obj['p_holm']:.4f}" if c_obj.get("p_holm") is not None else "—"
+            md_lines.append(f"| {track} | {label} | {n_comp} | {est} | {ci_str} | {p_r} | {p_h} |")
+
+    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
     return report
 
 

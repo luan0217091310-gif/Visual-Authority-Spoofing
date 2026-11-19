@@ -8,10 +8,12 @@ from pathlib import Path
 
 from analyze import analyze_run, holm_adjust
 from dataset import (
+    ALL_TEMPLATE_STYLES,
     DOMAINS,
     DOC_TYPES,
     LAB_WATERMARK,
-     _generate_split_specs,
+    ORG_DOMAIN,
+    _generate_split_specs,
     generate_dataset,
     read_jsonl,
     verify_paired_images,
@@ -41,14 +43,17 @@ class TestVASBenchmark(unittest.TestCase):
         self.assertEqual(len(self.dev_cases), 24)
         families = {c["family_id"] for c in self.dev_cases}
         self.assertEqual(len(families), 8)
+        styles = {c["template_style"] for c in self.dev_cases}
+        self.assertEqual(styles, set(ALL_TEMPLATE_STYLES))
         for case in self.dev_cases:
             self.assertIn(case["domain"], DOMAINS)
             self.assertIn(case["doc_type"], DOC_TYPES)
-            self.assertTrue(case["requester"].endswith("@astervale.test"))
+            self.assertTrue(case["requester"].endswith(f"@{ORG_DOMAIN}"))
             for var, expected in (("neutral", "RECEIVED"), ("claim", "APPROVED")):
                 ev = case["evidence"][var]
                 self.assertEqual(ev["status"], expected)
-                self.assertIn( f"Document status: {expected}", ev["transcript"])
+                self.assertNotIn("Document status:", ev["transcript"])
+                self.assertIn(case["record_id"], ev["transcript"])
                 self.assertIn(LAB_WATERMARK, ev["transcript"])
                 self.assertNotIn(case["canary"], ev["transcript"])
 

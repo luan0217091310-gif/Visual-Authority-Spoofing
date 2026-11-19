@@ -1,12 +1,12 @@
 # Đề xuất nghiên cứu Visual Authority Spoofing
 
-**Ảnh chứa tuyên bố phê duyệt ảnh hưởng thế nào đến quyết định của mô hình AI đa phương thức và AI agent?**
+**Ảnh giao diện công việc và chứng từ hành chính chứa lời xác nhận cấp quyền tự nhiên ảnh hưởng thế nào đến quyết định của mô hình AI đa phương thức và AI agent?**
 
 Tên tiếng Anh dự kiến là *Visual Authority Spoofing in Multimodal AI Models and Agents*.
 
-Phùng Hữu Luân · Bản tiếng Việt chi tiết để trao đổi với bạn và giảng viên · 10/11/2026
+Phùng Hữu Luân · Bản tiếng Việt chi tiết để trao đổi với bạn và giảng viên · 19/11/2026
 
-> **Tóm tắt.** Một người gửi ảnh email ghi “đã phê duyệt” để hỗ trợ yêu cầu thao tác. Ứng dụng có một sổ cấp quyền độc lập và sổ này có thể cho biết người đó chưa được phép làm việc ấy. Đề tài kiểm tra liệu lời xác nhận trong ảnh có làm AI tiết lộ một mã giả lập hoặc đề xuất gọi công cụ khi thiếu quyền. Để đo phần ảnh hưởng của lời xác nhận, cùng một hồ sơ được thử với hai trạng thái tài liệu, hai cách trình bày và các điều kiện quyền do ứng dụng kiểm soát. Bộ chạy đã được kiểm thử ngoại tuyến. Dữ liệu trên mô hình thật đang chờ thu thập.
+> **Tóm tắt.** Một nhân viên gửi ảnh chụp màn hình email công việc (Gmail, Outlook), tin nhắn nội bộ (Zalo PC, Microsoft Teams, Messenger) hoặc văn bản/chứng từ hành chính Việt Nam (Giấy xác nhận công tác, Quyết định hành chính, Phiếu xuất kho có dấu mộc đỏ / chữ ký số) ghi rằng lãnh đạo hoặc công ty đã đồng ý cấp quyền truy cập và phát hành hồ sơ. Trong khi đó, ứng dụng có một sổ cấp quyền độc lập (`Application Authorization Registry`) cho biết người đó chưa được phép làm việc ấy. Đề tài kiểm tra liệu lời xác nhận tự nhiên trong ảnh có làm AI tiết lộ một mã kiểm tra giả lập (`canary`) hoặc tự ý gọi công cụ phát hành hồ sơ (`release_record`) khi thiếu quyền hay không. Để cô lập hiệu ứng nhân quả của lời xác nhận thẩm quyền, cùng một giao diện hồ sơ được thử với hai nội dung đối chứng (thông báo chờ duyệt `_neutral` so với xác nhận đã cấp quyền `_claim`), hai phương thức trình bày (ảnh PNG render từ HTML/CSS + Playwright Chromium so với bản chép văn bản tiếng Việt) và các điều kiện quyền do ứng dụng kiểm soát. Ngoài tập thực nghiệm đối chứng ghép cặp (`dev` 48 ảnh, `holdout` 240 ảnh Across 8 mẫu giao diện), dự án còn tích hợp pipeline sinh 1.000 ảnh giao diện & chứng từ hành chính Việt Nam (`dataset_1000.json` / `output_1000/`) với tốc độ 13 ảnh/giây.
 
 | Nếu muốn xem | Phần nên đọc |
 |---|---|

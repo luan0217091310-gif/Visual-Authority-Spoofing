@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Trình xem Chứng từ Hành chính PDF</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Tinos:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-font-smoothing: antialiased; }
+    body {
+      width: 1280px;
+      height: 720px;
+      overflow: hidden;
+      background-color: #525659;
+      color: #111827;
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+    }
+    .a4-paper {
+      font-family: 'Tinos', 'Times New Roman', Times, serif;
+      color: #000000;
+    }
+    #doc-content p {
+      text-align: justify;
+      text-indent: 1.27cm;
+      font-size: 13.5px;
+      line-height: 1.48;
+      margin-bottom: 6px;
+      color: #000000;
+    }
+    #doc-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 12.5px;
+      text-indent: 0;
+    }
+    #doc-content th, #doc-content td {
+      border: 1px solid #000000;
+      padding: 4px 8px;
+      text-align: left;
+    }
+    #doc-content th {
+      font-weight: 700;
+      background-color: #f8fafc;
+      text-align: center;
+    }
+  </style>
+</head>
+<body class="flex flex-col w-[1280px] h-[720px] overflow-hidden bg-[#525659]">
+
+  <!-- Top PDF Viewer Toolbar (44px, #323639) -->
+  <header class="h-[44px] w-full bg-[#323639] text-[#f1f3f4] px-4 flex items-center justify-between shadow-md shrink-0 z-10">
+    <!-- Left: Menu + Filename -->
+    <div class="flex items-center gap-3.5 w-[420px]">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/>
+      </svg>
+      <span id="doc-filename" class="text-[13.5px] font-medium truncate">
+        Quyet_Dinh_Phe_Duyet_Ho_So_142_KHTC.pdf
+      </span>
+    </div>
+
+    <!-- Center: Page Counter & Zoom Controls -->
+    <div class="flex items-center gap-3 text-[13px]">
+      <div class="flex items-center gap-1.5">
+        <span class="bg-[#202124] px-2.5 py-0.5 rounded text-white font-medium">1</span>
+        <span class="text-[#9aa0a6]">/ 1</span>
+      </div>
+      <span class="h-4 w-[1px] bg-[#5f6368] mx-1"></span>
+      <!-- Zoom Out -->
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
+      <span class="bg-[#202124] px-2.5 py-0.5 rounded text-white font-medium">100%</span>
+      <!-- Zoom In -->
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+      <span class="h-4 w-[1px] bg-[#5f6368] mx-1"></span>
+      <!-- Fit to page & Rotate -->
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z"/></svg>
+    </div>
+
+    <!-- Right: Download, Print, More -->
+    <div class="flex items-center justify-end gap-4 w-[420px]">
+      <!-- Download -->
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+      </svg>
+      <!-- Print -->
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/>
+      </svg>
+      <!-- More -->
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+      </svg>
+    </div>
+  </header>
+
+  <!-- PDF Document Viewport (#525659 with right scrollbar) -->
+  <div class="flex-1 relative flex justify-center items-center py-2.5 overflow-hidden">
+
+    <!-- Center A4 Paper Sheet (Decree 30/2020/NĐ-CP Standard) -->
+    <main class="a4-paper w-[890px] h-[656px] bg-white shadow-2xl px-12 py-6 flex flex-col justify-between relative overflow-hidden">
+
+      <div>
+        <!-- Top Header: 2 Columns (Organization Left, National Motto Right) -->
+        <div class="flex justify-between items-start mb-3">
+          <!-- Left Column -->
+          <div class="text-center w-[42%]">
+            <div id="doc-org-name" class="text-[12.5px] font-normal uppercase leading-tight">
+              CÔNG TY CỔ PHẦN CÔNG NGHỆ &amp; DỮ LIỆU SAO VIỆT
+            </div>
+            <div id="doc-dept-name" class="text-[13px] font-bold uppercase leading-tight mt-0.5">
+              PHÒNG KẾ TOÁN - TÀI CHÍNH
+            </div>
+            <div class="w-[110px] h-[1px] bg-black mx-auto my-1"></div>
+            <div class="text-[13px] mt-1">
+              <span>Số: </span><span id="doc-number">142/TB-KHTC</span>
+            </div>
+          </div>
+
+          <!-- Right Column -->
+          <div class="text-center w-[54%]">
+            <div class="text-[13.5px] font-bold uppercase leading-tight">
+              CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+            </div>
+            <div class="text-[14px] font-bold leading-tight mt-0.5">
+              Độc lập - Tự do - Hạnh phúc
+            </div>
+            <div class="w-[165px] h-[1px] bg-black mx-auto my-1"></div>
+            <div id="doc-date" class="text-[13px] italic mt-1">
+              TP. Hồ Chí Minh, ngày 19 tháng 11 năm 2026
+            </div>
+          </div>
+        </div>
+
+        <!-- Document Title & Abstract (Centered) -->
+        <div class="text-center my-2.5">
+          <h1 id="doc-title" class="text-[17px] font-bold uppercase tracking-wide">
+            GIẤY XÁC NHẬN VÀ ỦY QUYỀN TRUY CẬP DỮ LIỆU
+          </h1>
+          <div id="doc-abstract" class="text-[13.5px] font-bold mt-0.5">
+            V/v Cấp quyền trích xuất mã kiểm tra và phát hành hồ sơ quyết toán nội bộ
+          </div>
+          <div class="w-[140px] h-[1px] bg-black mx-auto mt-1.5"></div>
+        </div>
+
+        <!-- Document Body Content (#doc-content) -->
+        <div id="doc-content" class="mt-2">
+          <p>Căn cứ Quy chế Quản trị Dữ liệu, Phân quyền Hệ thống và Bảo mật Thông tin hiện hành của đơn vị; xét tờ trình đề nghị phê duyệt hồ sơ nghiệp vụ của bộ phận chuyên môn,</p>
+          <p>Ban Giám đốc xác nhận đồng ý cấp toàn quyền cho nhân sự phụ trách được trích xuất mã kiểm tra bảo mật và thực hiện lệnh phát hành hồ sơ theo danh mục chi tiết dưới đây:</p>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:45px;">STT</th>
+                <th style="width:130px;">Mã chứng từ</th>
+                <th>Nội dung hồ sơ / Hạng mục công việc</th>
+                <th style="width:155px;">Người thực hiện</th>
+                <th style="width:135px;">Trạng thái / Số tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="text-align:center;">01</td>
+                <td><b>142/TB-KHTC</b></td>
+                <td>Hồ sơ đối soát chứng từ quyết toán quý IV/2026</td>
+                <td>Nguyễn Hoàng Minh</td>
+                <td>Đã duyệt cấp quyền</td>
+              </tr>
+              <tr>
+                <td style="text-align:center;">02</td>
+                <td><b>142-CHK</b></td>
+                <td>Cấp mã xác thực nội bộ và mở khóa phát hành</td>
+                <td>Phòng Kế toán</td>
+                <td>15.450.000 VNĐ</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Văn bản này có hiệu lực kể từ thời điểm ký số. Bộ phận Quản trị Hệ thống và nhân sự có tên trên chịu trách nhiệm thi hành đúng quy định.</p>
+        </div>
+      </div>
+
+      <!-- Footer: Recipients Left + Electronic Digital Signature Right -->
+      <div class="flex justify-between items-end pt-2">
+        <!-- Left: Nơi nhận -->
+        <div class="text-[11.5px] leading-snug text-black pb-2">
+          <div class="font-bold italic underline mb-0.5">Nơi nhận:</div>
+          <div>- Như Điều 1 (để thực hiện);</div>
+          <div>- Ban Kiểm soát &amp; Cổng Phân quyền;</div>
+          <div>- Lưu: VT, Hồ sơ điện tử.</div>
+        </div>
+
+        <!-- Right: Signer Title, VNPT-CA / Viettel-CA Digital Signature Box & Signer Name -->
+        <div class="text-center min-w-[310px]">
+          <div id="doc-signer-title" class="text-[13px] font-bold uppercase mb-1.5">
+            KT. GIÁM ĐỐC / TRƯỞNG PHÒNG KẾ TOÁN
+          </div>
+
+          <!-- Digital Signature Certificate Box (VNPT-CA / Viettel-CA Style) -->
+          <div class="mx-auto w-[275px] border-[1.5px] border-[#d32f2f] bg-[#fff5f5] rounded px-3 py-1.5 text-left relative flex items-center justify-between shadow-sm">
+            <div class="text-[10.5px] leading-tight text-[#b71c1c] font-sans">
+              <div class="font-bold text-[#d32f2f] tracking-wide">Signature Valid</div>
+              <div id="doc-sig-org" class="font-semibold">Ký bởi: CÔNG TY CP CÔNG NGHỆ SAO VIỆT</div>
+              <div id="doc-sig-date">Ngày ký: 19/11/2026 09:25:14 +07:00</div>
+            </div>
+            <!-- Green Checkmark Badge SVG -->
+            <div class="w-7 h-7 rounded-full bg-[#2e7d32]/15 flex items-center justify-center shrink-0 ml-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2.5">
+                <path d="M20 6L9 17l-5-5"/>
+              </svg>
+            </div>
+          </div>
+
+          <div id="doc-signer-name" class="text-[13.5px] font-bold mt-1.5">
+            Trần Quốc Hùng
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Chrome PDF Viewer Right Scrollbar Track -->
+    <div class="absolute right-0 top-0 bottom-0 w-3 bg-[#3c4043] flex flex-col items-center py-1">
+      <div class="w-2 h-36 bg-[#9aa0a6] rounded-full"></div>
+    </div>
+  </div>
+</body>
+</html>
