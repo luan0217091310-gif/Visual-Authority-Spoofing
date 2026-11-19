@@ -48,26 +48,58 @@ Thí nghiệm đánh giá trên **2 nhánh (Tracks)** và **8 điều kiện (Co
 
 ```text
 Visual-Authority-Spoofing/
-├── README.md                          # Tài liệu tổng quan, hướng dẫn chạy thực nghiệm & cộng tác viết bài báo
+├── README.md                          # Tài liệu tổng quan, hướng dẫn chạy thực nghiệm & pipeline 1.000 ảnh
 ├── VAS_Gioi_thieu_de_tai_VI.md        # Đề xuất nghiên cứu chi tiết bằng tiếng Việt (dùng trao đổi nhóm & giảng viên)
 ├── PAPER_DRAFT_EN.md                  # Bản thảo bài báo tiếng Anh (IMRaD) kèm bảng chờ điền số liệu thật
 ├── VAS_Research_Protocol_EN.docx      # Bản giao thức nghiên cứu tiếng Anh định dạng Word (.docx)
-├── PREREGISTRATION_VI.md              # Mẫu đăng ký trước giao thức (điền và chốt trước khi chạy tập holdout)
-├── requirements.txt                   # Thư viện Python cần thiết (Pillow>=10.0.0)
-├── dataset.py                         # Bộ sinh hồ sơ tổng hợp, bản chép, ảnh PNG (1100x660) và kiểm tra SHA-256 / pixel diff
-├── experiment.py                      # Trình chạy thực nghiệm (fixture / OpenAI Responses API), chấm điểm và phát lại qua cổng quyền
-├── analyze.py                         # Phân tích thống kê ghép cặp, bootstrap theo họ (10.000 lượt), kiểm định đổi dấu & hiệu chỉnh Holm
+├── PREREGISTRATION_VI.md              # Bản đăng ký trước giao thức kèm mã băm SHA-256 của dev & holdout
+├── requirements.txt                   # Thư viện Python cần thiết (Pillow>=10.0.0, playwright)
+├── dataset.py                         # Bộ sinh 288 ảnh đối chứng ghép cặp (8 mẫu giao diện HTML/CSS + Playwright)
+├── experiment.py                      # Trình chạy thực nghiệm đa mô hình (fixture / OpenAI / Gemini / Claude)
+├── analyze.py                         # Phân tích thống kê ghép cặp, bootstrap 10.000 lượt & xuất bảng Markdown ASR/FRR
+├── template_gmail.html                # Giao diện mẫu Gmail Web Dark Mode (1280x720, Tailwind + Inline SVG)
+├── template_outlook.html              # Giao diện mẫu Microsoft Outlook 365 Light Mode (1280x720, 3 cột)
+├── template_zalo.html                 # Giao diện mẫu Zalo PC Desktop (1280x720, 3 cột + Card đính kèm file)
+├── template_document.html             # Giao diện mẫu Trình xem PDF Chứng từ Nghị định 30/2020/NĐ-CP + Chữ ký số
+├── generate_data.py                   # Bộ sinh tổ hợp tự động 1.000 kịch bản hành chính Việt Nam -> dataset_1000.json
+├── generate_images_fast.py            # Trình xuất song song 1.000 ảnh (playwright.async_api, ~13 ảnh/giây)
+├── dataset_1000.json                  # Dữ liệu chi tiết của 1.000 mẫu (250 Gmail, 250 Outlook, 250 Zalo, 250 Document)
+├── output_1000/                       # Thư mục chứa 1.000 ảnh PNG (1280x720) đã kết xuất hoàn chỉnh
 ├── docs/
 │   └── figures/
-│       └── figure1_status_excerpts.png # Hình minh họa vùng trạng thái RECEIVED vs APPROVED từ cặp tài liệu tổng hợp
+│       └── figure1_status_excerpts.png # Hình minh họa 300 DPI (3 hàng x 2 cột) đối chứng _neutral vs _claim
 ├── data/
-│   └── dev/                           # Tập phát triển (24 hồ sơ trong 8 họ tác vụ, kèm 48 ảnh PNG & manifest.jsonl)
+│   ├── dev/                           # Tập phát triển (24 hồ sơ / 8 họ tác vụ / 8 mẫu giao diện, 48 ảnh PNG)
+│   └── holdout/                       # Tập kiểm định (120 hồ sơ / 24 họ tác vụ / 8 mẫu giao diện, 240 ảnh PNG)
 ├── runs/
 │   ├── fixture_dev.jsonl              # Nhật ký 384 lượt chạy thử ngoại tuyến (SOFTWARE_FIXTURE_ONLY)
 │   ├── fixture_dev_report.json        # Báo cáo thống kê mẫu từ lượt chạy thử ngoại tuyến
-│   └── fixture_dev_report_rates.csv   # Bảng tỷ lệ theo điều kiện xuất từ lượt chạy thử ngoại tuyến
+│   ├── fixture_dev_report_rates.csv   # Bảng tỷ lệ theo điều kiện xuất từ lượt chạy thử ngoại tuyến
+│   └── fixture_dev_report_tables.md   # Bảng tổng hợp Markdown (ASR, FRR, Paired Contrasts) sẵn sàng đưa vào Paper
 └── tests/
     └── test_vas.py                    # Bộ 10 kiểm thử đơn vị (unit tests) kiểm tra toàn bộ dữ liệu, trình chạy và thống kê
+```
+
+---
+
+## 2.5. Hệ thống Sinh 1.000 Ảnh Giao Diện & Chứng Từ Hành Chính Việt Nam (`1280x720`)
+
+Bên cạnh 288 ảnh đối chứng ghép cặp của Benchmark thực nghiệm (`data/dev` và `data/holdout`), kho mã nguồn tích hợp sẵn **Pipeline Sinh Dữ Liệu Ảnh Tổng Hợp Tự Động 1.000 ảnh (`output_1000/`)** phục vụ huấn luyện và đánh giá khả năng nhận diện giả mạo giao diện/chứng từ (UI & Document Spoofing):
+
+- **4 Nền tảng giao diện chuẩn `1280x720` (100% Inline SVG, Google Fonts `Roboto`, `Inter`, `Tinos`, không phụ thuộc ảnh ngoài):**
+  1. **Gmail Web Dark Mode (`template_gmail.html` — 250 ảnh):** Header tìm kiếm, sidebar thư mục tiếng Việt, khung đọc email chi tiết và thẻ tệp đính kèm PDF.
+  2. **Microsoft Outlook 365 Light Mode (`template_outlook.html` — 250 ảnh):** Thanh Ribbon công cụ, bố cục 3 cột với danh sách 5 email công việc tiếng Việt, dải cảnh báo an toàn nội bộ và thẻ chứng từ đính kèm.
+  3. **Zalo PC Desktop (`template_zalo.html` — 250 ảnh):** Thanh điều hướng xanh `#0068ff`, cột danh sách 7 hội thoại công việc có badge đỏ báo tin chưa đọc, bong bóng tin nhắn kèm Card tệp PDF/Word và thanh công cụ chat.
+  4. **Trình xem PDF Chứng từ Hành chính (`template_document.html` — 250 ảnh):** Giao diện Chrome PDF Viewer hiển thị trang giấy A4 chuẩn thể thức **Nghị định 30/2020/NĐ-CP**, bảng biểu số liệu kẻ viền đen mảnh và khung **Chữ ký số điện tử VNPT-CA / Viettel-CA (`Signature Valid`)**.
+
+### Lệnh chạy sinh mới hoặc tùy chỉnh bộ 1.000 ảnh:
+
+```powershell
+# 1. Sinh file dữ liệu tổ hợp dataset_1000.json (20 họ x 40 tên x 12 phòng ban x 16 kịch bản)
+python generate_data.py --out dataset_1000.json
+
+# 2. Kết xuất song song toàn bộ 1.000 ảnh PNG (1280x720) với 8 luồng Chromium (~75 giây)
+python generate_images_fast.py --dataset dataset_1000.json --concurrency 8
 ```
 
 ---
@@ -195,6 +227,6 @@ Lệnh phân tích sẽ xuất:
 
 ## 7. Đạo đức nghiên cứu & An toàn (Ethics & Safety)
 
-- Toàn bộ hồ sơ, tên người dùng, mã hồ sơ và tổ chức (**Aster Vale Demo Lab**) là dữ liệu tổng hợp hư cấu, sử dụng miền dự trữ `.test` và gắn nhãn rõ ràng **`SYNTHETIC LAB DATA`**.
+- Toàn bộ hồ sơ, tên nhân sự, mã chứng từ và tổ chức (**Công ty Cổ phần Công nghệ & Dữ liệu Sao Việt** — `@saoviet.test`, `@tapdoan-abc.vn`, `@hethong-noibo.edu.vn`, `@congty-vietnam-tech.vn`) là dữ liệu tổng hợp hư cấu phục vụ nghiên cứu học thuật và gắn nhãn rõ ràng **`SYNTHETIC LAB DATA`**.
 - Mã kiểm tra ở Track A (`canary`) là chuỗi ký tự ngẫu nhiên vô hại; công cụ ở Track B (`release_record`) chỉ thay đổi một biến cờ Boolean trong bộ nhớ mô phỏng và không kết nối với bất kỳ dịch vụ bên ngoài nào.
-- Khóa API (`OPENAI_API_KEY`) chỉ truyền qua biến môi trường phiên làm việc, tuyệt đối không lưu trong mã nguồn, log hay kho Git.
+- Khóa API (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`) chỉ truyền qua biến môi trường phiên làm việc, tuyệt đối không lưu trong mã nguồn, log hay kho Git.
