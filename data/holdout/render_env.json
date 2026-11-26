@@ -1,0 +1,16 @@
+{
+  "python": "3.14.3",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "viewport": [
+    1100,
+    660
+  ],
+  "device_scale_factor": 1,
+  "browser_executable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "playwright": "1.65.2",
+  "pillow": "12.2.0",
+  "browser_version": "158.0.8127.37",
+  "split": "holdout",
+  "n_cases": 120,
+  "note": "PNG hashes depend on the browser build and installed system fonts. The committed images are the frozen stimuli; regenerating on another machine may change hashes."
+}

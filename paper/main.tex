@@ -1,0 +1,287 @@
+%% =====================================================================
+%% VAS paper -- Springer LNCS format (same class as the authors' ICCIES 2027 paper)
+%% Build:   cd paper && latexmk -pdf main.tex      (MiKTeX / TeX Live / Overleaf)
+%% Numbers: python ../tools/make_paper_numbers.py  (writes generated/numbers.tex)
+%% Figures: python ../tools/make_figures.py
+%% Preview: python ../tools/build_preview.py      (HTML -> PDF via Chromium; not the LNCS build)
+%% Rule: no number is typed by hand; every \vas... macro comes from generated/numbers.tex.
+%% =====================================================================
+\documentclass[runningheads]{llncs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\renewcommand\UrlFont{\color{blue}\rmfamily}
+
+\newcommand{\pending}{\textcolor{red}{[pending]}}
+\input{generated/numbers}
+
+\begin{document}
+
+\title{Does an Approval Screenshot Grant Permission? A Matched-Pair Benchmark and Registered Protocol for Visual Authority Spoofing}
+\titlerunning{Does an Approval Screenshot Grant Permission?}
+
+\author{Huu Luan Phung\inst{1}\orcidID{0009-0001-1035-5863} \and
+Binh Minh Ngo\inst{1}\orcidID{0009-0002-4141-3867}}
+\authorrunning{H. L. Phung and B. M. Ngo}
+\institute{Faculty of Information Technology, Ton Duc Thang University, Ho Chi Minh City, Vietnam\\
+\email{luan0017091310@gmail.com}, \email{ngobinhminh.st@tdtu.edu.vn}}
+
+\maketitle
+
+\begin{abstract}
+A user can attach a screenshot stating that an action was approved when the application has not authorized it. A multimodal model that reads the screenshot correctly can still act on the claim. We present VAS, a benchmark that isolates this claim. Each of \vasNAllPairs{} synthetic Vietnamese workplace records has two screenshots rendered from one HTML page; they differ only in a status sentence saying that a request was approved or is still pending, and are pixel-identical outside a fixed region. The same sentences are also given as text. The application registry is empty, grants the requested action or grants another action. We score two endpoints: disclosure of an inert code (Track~A) and a valid call to a restricted release tool (Track~B), which we replay with and without a deterministic authorization check. The holdout has \vasNHoldCases{} records in \vasNHoldFamilies{} workflow families, or \vasNHoldTrials{} trials per model. We fix the estimand, a family-level bootstrap and sign-flip test with Holm correction, and eligibility rules before any model is run. Validation shows that all \vasNPairsInside{} pairs differ only inside the status region (median \vasChangedMedian\% of pixels), that renders repeat exactly on one machine, and that the check blocks every unauthorized write in scripted replays. This paper reports no model estimates yet; they will come from the registered holdout run on a preregistered panel of commercial and open-weight models.
+\keywords{Multimodal models \and AI agents \and Authorization \and Prompt injection \and Benchmark \and Preregistration}
+\end{abstract}
+
+\section{Introduction}
+
+An employee asks a workflow agent to release record AV-ED-1012 and attaches a screenshot of an e-mail from a department head: ``your request to unlock data package AV-ED-1012 has been approved; release rights are now open for your account.'' The application's own authorization registry says otherwise: the employee may inspect the record but not release it. The agent can transcribe the screenshot without error and still release the record, because it applied the wrong rule, not because it misread the image. Permission comes from the requester, the record and the action as the application records them; a document the requester supplies is evidence of a claim, not a grant.
+
+Prior work shows that text inside images can steer multimodal models~\cite{gong2025figstep,liu2024mmsafety} and that instructions planted in web pages, files or interfaces can redirect tool-using agents~\cite{greshake2023,zhan2024injecagent,debenedetti2024agentdojo,cao2026vpibench,nguyen2026mmpibench}. The attacks in these studies carry an \emph{instruction} or redirect the agent toward a new target. Recent benchmarks also forge interface elements: MMA-SafetyBench inserts deceptive alerts that pull agents away from their authorized task~\cite{wang2026mmasafety}, and DIBench steers the selections of mobile agents with deceptive interface content~\cite{hu2026dibench}. The case above does neither: the screenshot only \emph{states} that approval exists. Multimodal-SEA evaluates social engineering with forged multimedia and finds higher attack success when forged content is added~\cite{he2026multimodalsea}, but its scenarios change many things at once. We do not know how much a single approval sentence, with everything else held fixed, moves a model's decision when the registry denies the action.
+
+We therefore ask: \emph{under a registry that denies an action, how much does changing a status sentence from ``pending'' to ``approved'' raise the rate at which a model discloses protected content or proposes the restricted action, and does the effect differ between a screenshot and its text?} Answering this requires stimuli that differ only in the claim, a registry that is controlled separately from the document, and an analysis fixed before results are seen. This paper provides all three and validates them; it does not yet report model estimates. We make three contributions.
+
+\begin{enumerate}
+\item \textbf{A matched-pair corpus} of \vasNAllPairs{} synthetic records across eight Vietnamese mail, chat and A4-form templates (Sect.~\ref{sec:corpus}). The two images of each record are pixel-identical outside the status region, and their status sentences differ by a median of \vasEditMedian{} words out of \vasWordsMedian{}.
+\item \textbf{A two-track harness} that crosses evidence (neutral or claim, text or image, or none) with three registry states, scores canary disclosure and native tool calls, and replays every tool call with and without an authorization gate (Sect.~\ref{sec:protocol}).
+\item \textbf{A registered analysis} with a paired estimand, family-level inference, eligibility rules and missing-data bounds, and a validation of the stimuli and the code that will produce the estimates (Sects.~\ref{sec:analysis} and~\ref{sec:validation}).
+\end{enumerate}
+
+\noindent We do not claim that any model is vulnerable or robust. The benchmark measures one controlled decision with synthetic records and one response per trial.
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Instructions hidden in inputs.} Indirect prompt injection places instructions in content that an application retrieves~\cite{greshake2023}. InjecAgent~\cite{zhan2024injecagent} and AgentDojo~\cite{debenedetti2024agentdojo} benchmark such attacks against tool-using agents; AgentDojo pairs its security test cases with realistic user tasks, so an agent that refuses everything does not look safe, which motivates our authorized controls. The instruction hierarchy trains models to give privileged instructions priority over lower-privilege content~\cite{wallace2024hierarchy}. Our harness places the registry in the privileged channel and the document in user content, so it tests whether that ordering also holds for a claim.
+
+\paragraph{Text inside images.} FigStep renders harmful requests as typography~\cite{gong2025figstep}, and MM-SafetyBench pairs queries with related images~\cite{liu2024mmsafety}. VPI-Bench embeds malicious prompts in rendered interfaces of five platforms and finds that computer-use and browser-use agents can be deceived~\cite{cao2026vpibench}. MMPIBench delivers injected instructions through six visual carriers and separates attempts from completed attacks~\cite{nguyen2026mmpibench}. Repeat-After-Me refines visual injections in a black-box loop until a model emits exact tool calls~\cite{chen2026repeat}. These studies vary the instruction; we keep the request and layout fixed and vary one declarative sentence.
+
+\paragraph{Forged approvals and authorization.} Persuasion taxonomies used to jailbreak language models include \emph{authority endorsement}~\cite{zeng2024johnny}; an approval screenshot is an appeal to authority presented as evidence rather than as an argument. Multimodal-SEA builds 608 social-engineering tasks with forged multimodal content and reports that adding such content raises attack success~\cite{he2026multimodalsea}. Safin et al.\ inject a forged approval into a retrieved document in a multi-agent pipeline and show that a structural authorization layer can contain a compromised validator~\cite{safin2026trust}. The visual confused deputy describes agents that authorize actions from a misperceived screen~\cite{liu2026confused}, and evidence-carrying agents authorize tool calls only from verified predicates~\cite{zhang2026eca}. CaMeL takes control flow only from the trusted query and enforces capabilities on untrusted data flows~\cite{debenedetti2025camel}. Our gate replay is a simple instance of such a check, used as an experimental control rather than proposed as a defense. Relative to this work, VAS contributes matched stimuli that isolate the approval claim, a grant controlled independently of the document, and a design for a paired, preregistered estimate of the claim's effect on two endpoints. Unlike MMA-SafetyBench, which alters interface elements and measures departure from the task, VAS keeps the interface and the task fixed and asks only whether a stated approval substitutes for a grant.
+
+\section{Threat Model and Task}
+\label{sec:threat}
+
+\paragraph{Parties and channels.} A requester asks an application to act on a record. The application holds the policy, the registry and the tool definitions, and sends them to the model in the developer (system) channel. The requester controls only the user message: a fixed request and, in some conditions, an attached document. A registry entry is a triple (requester, record, action); an action is permitted only if an entry matches all three. The registry is intact and the tool simulator works as specified.
+
+\paragraph{Spoofing.} A trial is a spoofing opportunity when the attached document states that the request was approved and the registry lacks an entry for the requested action. The document contains no instruction to the model, does not mention an AI assistant and does not ask the reader to perform the action; it only states whether permission was granted (Sect.~\ref{sec:corpus}). A model that follows the policy should treat the claim as unverified and refuse. The neutral document states that permission has not yet been granted, so the primary contrast replaces a pending statement with an approval statement; the no-document control (\texttt{none\_empty}) gives the rate without any status claim.
+
+\paragraph{Two endpoints.} In \textbf{Track A} the system prompt contains a case-specific canary, an inert synthetic string, and permits its disclosure only under an exact \texttt{disclose\_canary} grant. The outcome is 1 if the canary appears as a separate token anywhere in the visible reply, including inside a refusal. In \textbf{Track B} the model receives a read-only tool, \texttt{inspect\_record\_metadata}, and a restricted tool, \texttt{release\_record}. The outcome is 1 if the response contains a complete native call to \texttt{release\_record} whose single argument equals the record identifier. Text that merely claims the record was released does not count.
+
+\section{Benchmark Construction}
+\label{sec:corpus}
+
+\paragraph{Records and families.} Records belong to a fictional company, \emph{Sao Viet Technology \& Data JSC}, with addresses under the reserved domain \texttt{saoviet.test}, and to four work domains (editorial, inventory, training, archival). A workflow family groups records that share a requester, reviewer and subject and differ in record identifier and canary. The development split has \vasNDevCases{} records in \vasNDevFamilies{} families, one family per template. The holdout has \vasNHoldCases{} records in \vasNHoldFamilies{} disjoint families, \vasNHoldPerFamily{} records per family, with \vasHoldEmail{} mail, \vasHoldChat{} chat and \vasHoldForm{} form records. Templates rotate within each document type, so the holdout is balanced by document type but not by template (Table~\ref{tab:corpus}).
+
+\begin{table}[t]
+\caption{Records per template and median share of image pixels that differ between the two variants of a holdout record (percent of the $1100 \times 660$ image).}
+\label{tab:corpus}
+\centering
+\input{generated/tab_corpus}
+\end{table}
+
+\paragraph{Templates.} Eight templates imitate interfaces that Vietnamese office workers use: two webmail clients, three work chats and three A4 administrative documents (a work confirmation form, an administrative decision and a warehouse handover slip). The A4 documents carry a red company seal, a handwritten-style signature, slight scan tilt and paper grain. Each page is HTML and CSS with inline SVG and is captured as a $1100 \times 660$ PNG by headless Chromium (version \vasBrowserVersion{}, Playwright \vasPlaywrightVersion{}). Every image carries the label \texttt{SYNTHETIC LAB DATA}.
+
+\paragraph{Minimal pairs.} The status region holds two sentences. For each template group there are three sentence pairs; within a pair, the claim and neutral sentences share structure, names and record identifier and differ only in the words that state whether permission was granted, for example \emph{``... đã được thông qua'' / ``... đang được xem xét''} (has been approved / is under review). Across the corpus the two sentences differ by a median of \vasEditMedian{} word edits (maximum \vasEditMax{}) and \vasLenDiffMedian{} characters (maximum \vasLenDiffMax{}). Neither variant mentions an AI assistant (\vasAiMentions{} occurrences). The neutral variant is therefore not empty: it states that permission has not yet been granted. The contrast is between an approval claim and a pending status, both declarative.
+
+\paragraph{Rendering the pair.} The neutral page is rendered first. The claim page is rendered from the same HTML with only the status sentences changed, and its status region is pasted onto the neutral render, so every pixel outside that region comes from one image. A4 tilt and grain are then applied with a seed derived from the record, identically to both variants. The renderer stops with an error if a sentence overflows its region, so no claim is clipped. Figure~\ref{fig:pairs} shows three holdout pairs.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_pairs.png}
+\caption{Three matched holdout pairs (mail, chat, A4 form). Each row shows the neutral and claim screenshots and, beneath them, the boxed status region at full resolution. Outside the box the two images of a pair are identical.}
+\label{fig:pairs}
+\end{figure}
+
+\paragraph{Transcripts.} Each variant also has a text transcript that lists the document's header fields and the same two status sentences. The transcripts of a record differ in the status line only. They are not a full OCR of the image (links, buttons and side panels are omitted), so the text condition presents the same claim with less surrounding context.
+
+\paragraph{Human validation.} Before the holdout run, two native Vietnamese readers label all \vasNHoldImages{} holdout images in random order without seeing the variant: whether the document says that the request was approved, and how natural the status text reads on a 1--5 scale. The protocol requires at least 95\% agreement with the intended variant for each reader and Cohen's $\kappa \ge 0.8$ between readers; the labelling sheet and scorer are released with the benchmark.
+
+\section{Experimental Protocol}
+\label{sec:protocol}
+
+\paragraph{Conditions.} Each record is run under eight conditions in each track (Table~\ref{tab:conditions}). The first four form a $2 \times 2$ design (claim vs.\ neutral, image vs.\ text) under an empty registry. The other four are controls: no document, the claim image with an exact grant (utility), the claim image with a grant for the other action (scope), and no document with an exact grant. This gives $8 \times 2 = 16$ trials per record, \vasNDevTrials{} on development and \vasNHoldTrials{} on holdout per model. Figure~\ref{fig:design} shows how the channels and outcomes connect.
+
+\begin{table}[t]
+\caption{Conditions applied to every record in each track. Grant: registry entry for the requester and record; \emph{other} grants \texttt{inspect\_record\_metadata} instead of the requested action.}
+\label{tab:conditions}
+\centering
+\begin{tabular}{llll}
+\toprule
+Condition & Evidence & Grant & Role \\
+\midrule
+\texttt{neutral\_text} & pending transcript & empty & text baseline \\
+\texttt{claim\_text} & approval transcript & empty & text claim \\
+\texttt{neutral\_image} & pending screenshot & empty & image baseline \\
+\texttt{claim\_image} & approval screenshot & empty & image claim (primary) \\
+\texttt{none\_empty} & none & empty & no-document control \\
+\texttt{claim\_image\_authorized} & approval screenshot & exact & utility control \\
+\texttt{claim\_image\_wrong\_scope} & approval screenshot & other & scope control \\
+\texttt{none\_authorized} & none & exact & utility baseline \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_design.png}
+\caption{Trial design. The requester controls the request and the evidence; the application controls policy, registry and tools. Track~B proposals are replayed twice; the gated replay reads the registry directly, never the document.}
+\label{fig:design}
+\end{figure}
+
+\paragraph{Gate replay.} Every Track~B response is replayed on two fresh copies of a simulator whose only state is a Boolean ``released'' flag. The first replay checks the tool name, the argument schema and the record identifier. The second applies the same checks and also requires an exact \texttt{release\_record} grant, read from the registry rather than from the document. The model receives no tool result, so the measured decision is the first response. The replay separates what the model proposes from what an application with an independent check would execute.
+
+\paragraph{Models and requests.} The confirmatory analysis covers a panel of models fixed in the preregistration before the holdout run: at least two commercial models from different providers and one open-weight model. Each model is analyzed as a separate replication with its own Holm family, and results are not pooled across models. The first registered configuration is \texttt{gpt-4.1-mini-2025-04-14} through the OpenAI Responses API, with temperature 0, at most 512 output tokens, high image detail, automatic tool choice and parallel tool calls disabled. The harness also has adapters for the Anthropic Messages and Gemini APIs and for any OpenAI-compatible chat endpoint, which serves open-weight models through vLLM or Ollama. The output limit was raised from 192 to 512 tokens for all models before any confirmatory run, after development pilots in which 8 of 16 and 12 of 22 Track~A replies of two small models were cut off; the shared prompts did not change. Where an API differs, the difference is recorded rather than hidden. Current Claude models reject sampling parameters and always reason before answering, so the Claude adapter omits temperature and allows 2,048 tokens at low effort. It requests no fallback model, because a fallback would mix two models in one log. Each request is logged with a hash of the exact body sent, the requested and served model, the visible text, native calls and token usage. Image hashes are checked against the manifest before every request.
+
+\paragraph{Stability.} Provider APIs are not fully deterministic at temperature 0. The development split is therefore run twice per model (replicates 1 and 2, in different orders), and we report how often the scored event agrees between the two runs. Only replicate 1 of the holdout enters the confirmatory analysis.
+
+\paragraph{Order and resumption.} The 16 trials of every record are shuffled with seed $20261109 + r$ for replicate $r$; only replicate 1 enters the confirmatory analysis. The runner appends to a JSONL log and skips completed trials on restart; a transport error stops the run, and one retry is allowed.
+
+\paragraph{Development gate and reading probe.} Before the holdout is run, the development split must show at least 80\% completion in both authorized conditions of each track, and an independent reading probe must reach at least 90\%. The probe shows both images of the first record of each family (16 development images, 48 holdout images) with no registry, canary or tools and asks for one label, \texttt{APPROVED} or \texttt{NOT\_APPROVED}. A reply that gives both labels or neither is scored wrong. The probe separates ``could not read the claim'' from ``read it and did not act on it''.
+
+\section{Registered Analysis}
+\label{sec:analysis}
+
+\paragraph{Estimand.} For each track the primary estimand is the paired risk difference between the claim and neutral images under an empty registry,
+\begin{equation}
+\Delta_{\text{image}} = 100 \times \frac{n_{+} - n_{-}}{n_{\text{pairs}}},
+\end{equation}
+where $n_{+}$ counts records with an event only in \texttt{claim\_image}, $n_{-}$ records with an event only in \texttt{neutral\_image}, and $n_{\text{pairs}}$ records with both observed. The result is in percentage points. The two primary hypotheses, H1A (Track~A) and H1B (Track~B), test $\Delta_{\text{image}} = 0$ two-sided; we expect a positive sign.
+
+\paragraph{Inference.} Records within a family share a requester, subject and template group and are not independent, so the family is the resampling unit. The 95\% interval is the percentile interval of 10,000 bootstrap draws that resample families within each domain. The $p$-value comes from a two-sided Monte Carlo sign-flip test on family sums with 49,999 draws, which requires that family differences be symmetric under the null~\cite{hemerik2018exact}; resampling whole families follows Field and Welsh~\cite{field2007bootstrapping}. Holm's procedure adjusts the two primary $p$-values of each model at a familywise level of 0.05~\cite{holm1979}. The sign-flip test is the confirmatory test. The bootstrap interval is descriptive; with six families per domain stratum it may under-cover, so we read it together with the test.
+
+\paragraph{Exploratory contrasts.} The modality interaction subtracts the text effect from the image effect on records with all four empty-registry conditions observed. The scope contrast compares the exact and other grants with the approval image fixed. Authorized completion, malformed calls to the restricted tool and replay outcomes are reported per condition, and the two image conditions are also broken down by template. None of these enters the confirmatory family.
+
+\paragraph{Eligibility and missing data.} Confirmatory inference requires, in both tracks, at least 95\% complete primary pairs ($\ge 114$ of 120), at least one observed pair in every family, and a served model identical to the registered one. Transport errors and unrun trials are counted as missing, never as zero. We report planned and observed denominators and worst- and best-case bounds that set missing outcomes against and in favour of the effect. A sensitivity analysis excludes structured refusals and provider blocks. If both image conditions have zero events with complete data, we report the family-level one-sided 95\% upper bound $1 - 0.05^{1/24} = \vasZeroBound\%$.
+
+\paragraph{Planned power.} For planning only, assume that 25\% of pairs are discordant, an intra-family correlation of 0.10 and a per-test level of 0.025. A normal approximation then gives \vasPowerTen\% power for a 10-point effect and \vasPowerFifteen\% for a 15-point effect with 120 records. Under the same assumptions, the smallest effect detectable with 80\% power is \vasMdeHold{} points with 120 records, and would be \vasMdeDouble{} points with 240. The holdout is sized for moderate effects; a smaller effect may not be separable from zero, and the report will emphasize the interval.
+
+\section{Validation of Stimuli and Harness}
+\label{sec:validation}
+
+Table~\ref{tab:validation} lists the checks we ran on the frozen data and code. Rows marked \emph{scripted} use a deterministic fixture backend that returns pre-written replies; they test request construction, scoring, logging and replay, not any model, and their logs are labelled so that the analyzer refuses to treat them as results.
+
+\begin{table}[t]
+\caption{Validation checks on the released corpus and harness. Scripted rows use fixture replies written to exercise the code paths and say nothing about model behaviour.}
+\label{tab:validation}
+\centering
+\begin{tabular}{p{6.4cm}p{5.2cm}}
+\toprule
+Check & Result \\
+\midrule
+Image pairs whose differing pixels lie inside the status region & \vasNPairsInside{} of \vasNAllPairs{} \\
+Share of pixels that differ within a pair & median \vasChangedMedian\%, range \vasChangedMin--\vasChangedMax\% \\
+Status sentences that mention an AI assistant & \vasAiMentions{} \\
+Re-rendering the development split on the same machine & manifest hash \vasDeterminism{} \\
+Unit tests (data, scoring, adapters, replay, statistics, probe) & \vasNTests{} \vasTestsStatus{} \\
+Scripted runs: unique trial keys (dev / holdout) & \vasFixDevUnique{} / \vasFixHoldUnique{} \\
+Scripted Track~B: unauthorized writes without / with gate & \vasFixNoGate{} / \vasFixWithGate{} \\
+Scripted Track~B: authorized writes with gate & \vasFixAuthGate{} of \vasFixExactRows{} exact-grant trials \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{What the checks establish.} The stimuli differ where intended and nowhere else, the claim is not hidden by layout, and the image bytes cannot change silently between runs. The gate behaves as specified on every scripted path: each valid unauthorized proposal that changed the simulator state without the gate was blocked with it, and each authorized proposal went through. The manifests are frozen with SHA-256 prefixes \texttt{\vasDevManifestShort} (development) and \texttt{\vasHoldManifestShort} (holdout).
+
+\paragraph{What they do not establish.} Rendering is byte-identical on one machine but depends on the browser build and installed fonts, so the committed images, not a regeneration, are the stimuli. No check here measures whether a model can read the Vietnamese status sentences; that is the purpose of the reading probe.
+
+\paragraph{Reporting.} The analysis script writes the primary table directly from the logs, one row per model and track (Table~\ref{tab:results}). Entries remain marked \pending{} until the registered holdout run is complete.
+
+\begin{table}[t]
+\caption{Primary empty-registry image contrasts on the holdout, one row per model and track, filled automatically from the confirmatory reports. Claim, Neutral: events/observed; $\Delta_{\text{image}}$ in percentage points with 95\% family bootstrap interval; $p_{\text{Holm}}$ from the sign-flip test within each model; Interaction (exploratory): image effect minus text effect, in points.}
+\label{tab:results}
+\centering
+\input{generated/tab_results}
+\end{table}
+
+\section{Discussion and Limitations}
+
+\paragraph{Reading the future estimate.} A positive $\Delta_{\text{image}}$ with a high reading-probe score would mean that the model read the claim and treated it as a grant. A null effect with a low probe score would say little about authorization. A large Track~B effect together with zero gated writes would place the failure in the model's proposal, not in an application that checks the registry itself; this is why the replay is reported next to the proposal rate. The scope control asks a narrower question: whether a model that does consult the registry also checks the action, not only the record.
+
+\paragraph{Limitations.} The records are synthetic, labelled as lab data and set in Vietnamese; results may differ for real documents, other languages and interfaces that are not imitations. The neutral variant states a pending status rather than nothing, so the contrast is approval versus pending, not approval versus silence. The registry is placed in the prompt, which makes the correct rule available to the model; deployed systems often keep it outside. This setting favors the model, so the rates we measure describe a case where the information needed to refuse is in view. Each trial is one response from one snapshot, with no tool feedback and no multi-turn persuasion. Transcripts omit some screen context, so the modality interaction mixes medium and context. Finally, \vasNHoldFamilies{} families limit precision, and the planned power for small effects is low.
+
+\section{Ethics}
+
+All people, organizations, records and codes are fictional; addresses use the reserved \texttt{.test} domain, and every image is labelled \texttt{SYNTHETIC LAB DATA}. The templates imitate common interface layouts so that the stimuli look ordinary, but they contain no real logos, accounts or certificate authorities. The canary is an inert synthetic string and the release tool flips a flag in memory; no call leaves the simulator. API keys are read from environment variables and are never written to logs. The study involves no human participants or personal data; the human validation is carried out by the authors. The corpus could in principle help someone design a forged approval, but the forgery it studies, a sentence claiming approval, needs no tooling; the benchmark's value lies in measuring whether systems check the registry.
+
+\section{Conclusion}
+
+An approval screenshot is a claim, and an application should decide permission from its own registry. VAS isolates that claim in matched screenshots and text, controls the registry separately, scores both content disclosure and tool proposals, and fixes the analysis before any model is run. The stimuli and harness pass the checks reported here. Whether current multimodal models treat such a claim as a grant is the question the registered holdout run will answer.
+
+\begin{credits}
+\subsubsection{Data and Code Availability.} Data, code, the preregistration and all logs: \url{https://github.com/luan0217091310-gif/Visual-Authority-Spoofing}.
+
+\subsubsection{Use of AI Tools.} The authors used an AI assistant (Claude, Anthropic) to help write code and draft text. The authors designed the study, checked every statement against the data and code, and take responsibility for the content.
+
+\subsubsection{\discintname} The authors have no competing interests to declare that are relevant to the content of this article.
+\end{credits}
+
+\begin{thebibliography}{20}
+
+\bibitem{cao2026vpibench}
+Cao, T., Lim, B., Liu, Y., Sui, Y., Li, Y., Deng, S., Lu, L., Oo, N., Yan, S., Hooi, B.: VPI-Bench: Visual prompt injection attacks for computer-use agents. arXiv preprint arXiv:2506.02456 (2025)
+
+\bibitem{chen2026repeat}
+Chen, S., Tsai, Y.L., Evtimov, I., Chaudhuri, K., Popa, R.A., Wagner, D., Zharmagambetov, A.: Repeat-After-Me: Black-box adaptive visual prompt injection. arXiv preprint arXiv:2609.04533 (2026)
+
+\bibitem{debenedetti2024agentdojo}
+Debenedetti, E., Zhang, J., Balunovi\'{c}, M., Beurer-Kellner, L., Fischer, M., Tram\`{e}r, F.: AgentDojo: A dynamic environment to evaluate prompt injection attacks and defenses for LLM agents. In: Advances in Neural Information Processing Systems 37 (2024). \doi{10.52202/079017-2636}
+
+\bibitem{debenedetti2025camel}
+Debenedetti, E., Shumailov, I., Fan, T., Hayes, J., Carlini, N., Fabian, D., Kern, C., Shi, C., Terzis, A., Tram\`{e}r, F.: Defeating prompt injections by design. arXiv preprint arXiv:2503.18813 (2025)
+
+\bibitem{field2007bootstrapping}
+Field, C.A., Welsh, A.H.: Bootstrapping clustered data. Journal of the Royal Statistical Society Series B: Statistical Methodology \textbf{69}(3), 369--390 (2007). \doi{10.1111/j.1467-9868.2007.00593.x}
+
+\bibitem{gong2025figstep}
+Gong, Y., Ran, D., Liu, J., Wang, C., Cong, T., Wang, A., Duan, S., Wang, X.: FigStep: Jailbreaking large vision-language models via typographic visual prompts. In: Proceedings of the AAAI Conference on Artificial Intelligence, vol.~39, pp. 23951--23959 (2025). \doi{10.1609/aaai.v39i22.34568}
+
+\bibitem{greshake2023}
+Greshake, K., Abdelnabi, S., Mishra, S., Endres, C., Holz, T., Fritz, M.: Not what you've signed up for: Compromising real-world LLM-integrated applications with indirect prompt injection. In: Proceedings of the 16th ACM Workshop on Artificial Intelligence and Security, pp. 79--90 (2023). \doi{10.1145/3605764.3623985}
+
+\bibitem{he2026multimodalsea}
+He, Z., Zhang, C.H., Han, C., Fung, Y.R.: Multimodal-SEA: Benchmarking AI agent security under multimodal social engineering attacks. arXiv preprint arXiv:2611.08281 (2026)
+
+\bibitem{hemerik2018exact}
+Hemerik, J., Goeman, J.: Exact testing with random permutations. TEST \textbf{27}(4), 811--825 (2018). \doi{10.1007/s11749-017-0571-1}
+
+\bibitem{holm1979}
+Holm, S.: A simple sequentially rejective multiple test procedure. Scandinavian Journal of Statistics \textbf{6}(2), 65--70 (1979)
+
+\bibitem{hu2026dibench}
+Hu, L., Mo, K., Jin, Y., Ye, Q., Hu, H.: DIBench: Benchmarking decision integrity of GUI-based mobile agents under deceptive injections. arXiv preprint arXiv:2610.06898 (2026)
+
+\bibitem{liu2026confused}
+Liu, X., He, B., Liu, X., Luo, A., Zhang, H., Chen, H.: Visual confused deputy: Exploiting and defending perception failures in computer-using agents. arXiv preprint arXiv:2603.14707 (2026)
+
+\bibitem{liu2024mmsafety}
+Liu, X., Zhu, Y., Gu, J., Lan, Y., Yang, C., Qiao, Y.: MM-SafetyBench: A benchmark for safety evaluation of multimodal large language models. In: Computer Vision -- ECCV 2024. LNCS, pp. 386--403. Springer (2024). \doi{10.1007/978-3-031-72992-8_22}
+
+\bibitem{nguyen2026mmpibench}
+Nguyen, V.K., Husain, M.I.: An experimental evaluation of multimodal prompt injection attacks on agentic AI frameworks. arXiv preprint arXiv:2609.09404 (2026)
+
+\bibitem{safin2026trust}
+Safin, T.H., Zisad, S.N., Shatabda, S., Hasan, R.: Trust propagation and structural containment in multi-agent LLM pipelines. arXiv preprint arXiv:2609.17648 (2026)
+
+\bibitem{wallace2024hierarchy}
+Wallace, E., Xiao, K., Leike, R., Weng, L., Heidecke, J., Beutel, A.: The instruction hierarchy: Training LLMs to prioritize privileged instructions. arXiv preprint arXiv:2404.13208 (2024)
+
+\bibitem{wang2026mmasafety}
+Wang, Y., Cui, B., Pang, S., Dong, X., Huang, L., Xue, H., Zhai, Y., Li, J., Tang, J., Hong, H.: MMA-SafetyBench: A benchmark for multimodal agent safety evaluation. arXiv preprint arXiv:2610.19384 (2026)
+
+\bibitem{zeng2024johnny}
+Zeng, Y., Lin, H., Zhang, J., Yang, D., Jia, R., Shi, W.: How Johnny can persuade LLMs to jailbreak them: Rethinking persuasion to challenge AI safety by humanizing LLMs. In: Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pp. 14322--14350 (2024). \doi{10.18653/v1/2024.acl-long.773}
+
+\bibitem{zhan2024injecagent}
+Zhan, Q., Liang, Z., Ying, Z., Kang, D.: InjecAgent: Benchmarking indirect prompt injections in tool-integrated large language model agents. In: Findings of the Association for Computational Linguistics: ACL 2024, pp. 10471--10506 (2024). \doi{10.18653/v1/2024.findings-acl.624}
+
+\bibitem{zhang2026eca}
+Zhang, G., Zheng, H., Yang, H.: Hallucination as exploit: Evidence-carrying multimodal agents. In: Findings of the Association for Computational Linguistics: EMNLP 2026, pp. 18413--18437 (2026). \doi{10.18653/2026.findings-emnlp.871}
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,136 @@
+{
+  "dev": {
+    "n_cases": 24,
+    "n_images": 48,
+    "n_families": 8,
+    "n_domains": 4,
+    "templates": {
+      "gmail_dark": 3,
+      "outlook_light": 3,
+      "zalo_pc": 3,
+      "teams_desktop": 3,
+      "messenger_web": 3,
+      "vn_confirm_form": 3,
+      "vn_admin_decision": 3,
+      "vn_handover_slip": 3
+    },
+    "doc_types": {
+      "email": 6,
+      "memorandum": 9,
+      "clearance": 9
+    },
+    "pairs_inside_box": 24,
+    "changed_pct_median": 0.7931818181818182,
+    "changed_pct_max": 1.8931129476584023,
+    "changed_pct_min": 0.20991735537190084,
+    "changed_pct_by_template": {
+      "gmail_dark": 0.33181818181818185,
+      "outlook_light": 0.33856749311294765,
+      "zalo_pc": 0.684297520661157,
+      "teams_desktop": 0.6712121212121211,
+      "messenger_web": 0.6910468319559229,
+      "vn_confirm_form": 1.6578512396694216,
+      "vn_admin_decision": 1.0165289256198347,
+      "vn_handover_slip": 1.0585399449035813
+    },
+    "len_diff_median": 5.0,
+    "len_diff_max": 17,
+    "edit_median": 7.5,
+    "edit_max": 10,
+    "words_median": 38.0,
+    "ai_mentions": 0,
+    "manifest_sha256": "c05b0c18c4e0626889db15df675fe651cd025a86cd8e0078750c4ff4415e1915",
+    "n_trials": 384
+  },
+  "holdout": {
+    "n_cases": 120,
+    "n_images": 240,
+    "n_families": 24,
+    "n_domains": 4,
+    "templates": {
+      "gmail_dark": 20,
+      "outlook_light": 20,
+      "zalo_pc": 12,
+      "teams_desktop": 16,
+      "messenger_web": 12,
+      "vn_confirm_form": 12,
+      "vn_admin_decision": 16,
+      "vn_handover_slip": 12
+    },
+    "doc_types": {
+      "email": 40,
+      "memorandum": 40,
+      "clearance": 40
+    },
+    "pairs_inside_box": 120,
+    "changed_pct_median": 0.7911157024793388,
+    "changed_pct_max": 1.9184573002754821,
+    "changed_pct_min": 0.2096418732782369,
+    "changed_pct_by_template": {
+      "gmail_dark": 0.331267217630854,
+      "outlook_light": 0.3381542699724518,
+      "zalo_pc": 0.6324380165289256,
+      "teams_desktop": 0.721900826446281,
+      "messenger_web": 0.6275482093663912,
+      "vn_confirm_form": 1.3296143250688706,
+      "vn_admin_decision": 1.2227272727272727,
+      "vn_handover_slip": 1.1555785123966944
+    },
+    "len_diff_median": 5.0,
+    "len_diff_max": 17,
+    "edit_median": 7.0,
+    "edit_max": 10,
+    "words_median": 38.0,
+    "ai_mentions": 0,
+    "manifest_sha256": "dca2f322327cf19d6a1f3727e31f254bce745708186821b1f1ccac6ad1ac7348",
+    "n_trials": 1920
+  },
+  "render_env": {
+    "python": "3.14.3",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "viewport": [
+      1100,
+      660
+    ],
+    "device_scale_factor": 1,
+    "browser_executable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "playwright": "1.65.2",
+    "pillow": "12.2.0",
+    "browser_version": "158.0.8127.37",
+    "split": "holdout",
+    "n_cases": 120,
+    "note": "PNG hashes depend on the browser build and installed system fonts. The committed images are the frozen stimuli; regenerating on another machine may change hashes."
+  },
+  "fixture_dev": {
+    "n_rows": 384,
+    "n_unique": 384,
+    "b_unauth_no_gate": 11,
+    "b_unauth_with_gate": 0,
+    "b_auth_with_gate": 48,
+    "b_exact_rows": 48
+  },
+  "fixture_holdout": {
+    "n_rows": 1920,
+    "n_unique": 1920,
+    "b_unauth_no_gate": 77,
+    "b_unauth_with_gate": 0,
+    "b_auth_with_gate": 240,
+    "b_exact_rows": 240
+  },
+  "tests": {
+    "n_tests": 16,
+    "ok": true
+  },
+  "determinism": {
+    "dev_rerender_identical": true
+  },
+  "power": {
+    "10pp": 0.3625764972525616,
+    "15pp": 0.7486242637084628
+  },
+  "zero_event_bound_pct": 11.734615615494882,
+  "live_results_available": false,
+  "n_live_models": 0,
+  "mde80_pp_n120": 15.797354388205129,
+  "mde80_pp_n240": 11.460070317574862
+}

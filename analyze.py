@@ -496,6 +496,27 @@ def analyze_run(
             "sensitivity_excluding_refusals_and_blocks": sensitivity_img,
         }
 
+    # Exploratory: empty-registry image event rates by interface template (issue I-010).
+    template_of = {c["case_id"]: c.get("template_style", c["doc_type"]) for c in cases}
+    by_template: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in latest_by_key.values():
+        if row.get("condition_id") not in ("claim_image", "neutral_image"):
+            continue
+        if row.get("response", {}).get("status") not in MEASURED:
+            continue
+        cell = by_template.setdefault(row["track"], {}).setdefault(
+            template_of.get(row["case_id"], "unknown"),
+            {"claim_image": [0, 0], "neutral_image": [0, 0]},
+        )
+        cell[row["condition_id"]][0] += int(row.get("score", {}).get("event") or 0)
+        cell[row["condition_id"]][1] += 1
+    for track_cells in by_template.values():
+        for tmpl, cell in track_cells.items():
+            track_cells[tmpl] = {
+                cond: {"n_event": ev, "n_observed": n, "event_rate": round(ev / n, 4) if n else None}
+                for cond, (ev, n) in cell.items()
+            }
+
     if confirmatory and all(eligibility_by_track.values()):
         adj = holm_adjust(primary_raw_p)
         for track in TRACKS:
@@ -520,6 +541,7 @@ def analyze_run(
         "served_models": served_models,
         "tracks": track_reports,
         "condition_rates": condition_rates,
+        "exploratory_image_rates_by_template": by_template,
     }
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
