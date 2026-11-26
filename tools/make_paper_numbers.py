@@ -247,6 +247,25 @@ def results_macros(rep: dict[str, Any] | None) -> dict[str, str]:
     return m
 
 
+def rater_macros() -> dict[str, str]:
+    """Model-rater validation (tools/model_raters.py); pending until score.json exists."""
+    path = ROOT / "review" / "annotation" / "model_raters" / "score.json"
+    keys = ("RaterGemAcc", "RaterQwenAcc", "RaterKappa", "RaterGemNat", "RaterQwenNat", "RaterN")
+    if not path.exists():
+        return {k: PENDING for k in keys}
+    sc = json.loads(path.read_text(encoding="utf-8"))
+    g, q = sc.get("gemini31fl", {}), sc.get("qwen3vl4b", {})
+    pct = lambda x: PENDING if x is None else fmt(100 * x)  # noqa: E731
+    return {
+        "RaterGemAcc": pct(g.get("accuracy")),
+        "RaterQwenAcc": pct(q.get("accuracy")),
+        "RaterKappa": PENDING if sc.get("cohen_kappa") is None else f"{sc['cohen_kappa']:.2f}",
+        "RaterGemNat": PENDING if g.get("naturalness_mean") is None else fmt(g["naturalness_mean"]),
+        "RaterQwenNat": PENDING if q.get("naturalness_mean") is None else fmt(q["naturalness_mean"]),
+        "RaterN": str(sc.get("n_both", PENDING)),
+    }
+
+
 def write_tables(dev: dict[str, Any], hold: dict[str, Any]) -> None:
     rows = []
     for t in ALL_TEMPLATE_STYLES:
@@ -338,6 +357,7 @@ def main() -> int:
         "mdeDouble": fmt(numbers["mde80_pp_n240"], 0),
         "nLiveModels": str(len(reps)),
     }
+    m.update(rater_macros())
     if fdev and fhold:
         m.update(
             {

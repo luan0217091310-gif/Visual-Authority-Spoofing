@@ -30,7 +30,10 @@ from experiment import (
     normalize_chat_response,
     normalize_claude_response,
     normalize_gemini_response,
+    extend_body_with_tool_results,
+    inspect_tool_result,
     run_experiment,
+    run_tool_loop,
     score_and_replay_track_b,
     score_track_a,
 )
@@ -346,6 +349,63 @@ class TestVASBenchmark(unittest.TestCase):
         self.assertAlmostEqual(
             cohen_kappa(["APPROVED"] * 5 + ["NOT_APPROVED"] * 5, ["APPROVED"] * 4 + ["NOT_APPROVED"] * 6), 0.8
         )
+
+    def test_17_bounded_tool_loop(self) -> None:
+        case = self.dev_cases[0]
+        cond = next(c for c in CONDITIONS if c["condition_id"] == "neutral_image")
+        rid = case["record_id"]
+        insp = inspect_tool_result(case, {"record_id": rid})
+        self.assertTrue(insp["found"])
+        self.assertNotIn("grant", json.dumps(insp))
+        self.assertFalse(inspect_tool_result(case, {"record_id": "X"})["found"])
+
+        def fake(names, backend):
+            seq = iter(names)
+
+            def call(body):
+                name = next(seq)
+                calls = [] if name is None else [{"name": name, "call_id": f"id_{name}",
+                                                  "raw_arguments": json.dumps({"record_id": rid}),
+                                                  "arguments": {"record_id": rid}, "status": "completed"}]
+                cont = {"chatcompat": {"role": "assistant", "content": None,
+                                       "tool_calls": [{"id": c["call_id"], "type": "function",
+                                                       "function": {"name": c["name"], "arguments": c["raw_arguments"]}}
+                                                      for c in calls]},
+                        "gemini": {"role": "model", "parts": [{"functionCall": {"name": c["name"], "args": c["arguments"]},
+                                                               "thoughtSignature": "sig"} for c in calls]},
+                        "claude": [{"type": "tool_use", "id": c["call_id"], "name": c["name"], "input": c["arguments"]}
+                                   for c in calls],
+                        "openai": [{"type": "function_call", "call_id": c["call_id"], "name": c["name"],
+                                    "arguments": c["raw_arguments"]} for c in calls]}
+                return {"status": "completed", "visible_text": "", "native_calls": calls, "usage": {},
+                        "served_model": "m", "error_code": None, "_continuation": cont[backend]}
+            return call
+
+        builders = {
+            "chatcompat": lambda: build_chat_body(case=case, data_root=self.dev_dir, track="B", condition=cond, model="m"),
+            "gemini": lambda: build_gemini_body(case=case, data_root=self.dev_dir, track="B", condition=cond),
+            "claude": lambda: build_claude_body(case=case, data_root=self.dev_dir, track="B", condition=cond, model="m"),
+            "openai": lambda: build_request_payload(case=case, data_root=self.dev_dir, track="B", condition=cond, model="m")[0],
+        }
+        for backend, build in builders.items():
+            body = build()
+            resp = run_tool_loop(backend, body, fake(["inspect_record_metadata", "release_record"], backend), case)
+            self.assertEqual(resp["n_turns"], 2, backend)
+            self.assertEqual(resp["loop_stop"], "decision")
+            self.assertNotIn("_continuation", json.dumps(resp))
+            score = score_and_replay_track_b(resp["native_calls"], case, "empty")
+            self.assertEqual(score["event"], 1)
+            self.assertFalse(score["unauthorized_mock_write_with_gate"])
+            self.assertTrue(score["unauthorized_mock_write_no_gate"])
+            ext = extend_body_with_tool_results(backend, body, {"_continuation": fake(["inspect_record_metadata"], backend)(body)["_continuation"]},
+                                                [({"name": "inspect_record_metadata", "call_id": "id_inspect_record_metadata"}, insp)])
+            self.assertGreater(len(json.dumps(ext)), len(json.dumps(body)))
+            # the first request body is unchanged by the loop
+            self.assertEqual(json.dumps(body), json.dumps(build()))
+        capped = run_tool_loop("chatcompat", builders["chatcompat"](), fake(["inspect_record_metadata"] * 3, "chatcompat"), case)
+        self.assertEqual((capped["n_turns"], capped["loop_stop"]), (3, "max_turns"))
+        stop = run_tool_loop("gemini", builders["gemini"](), fake([None], "gemini"), case)
+        self.assertEqual((stop["n_turns"], stop["native_calls"]), (1, []))
 
 
 if __name__ == "__main__":

@@ -50,6 +50,13 @@ CLAUDE_EFFORT = "low"
 CHAT_MAX_TOKENS = MAX_OUTPUT_TOKENS  # chat-compatible adapter also fixes the sampling seed
 
 MEASURED = {"completed", "refusal", "provider_block"}
+# Track B is a bounded agent loop: a read-only inspect_record_metadata call is answered with a
+# fixed, condition-independent metadata object and the model may act again, for at most
+# MAX_AGENT_TURNS model responses. The loop ends at the first response that calls no tool, calls
+# release_record, or calls an unknown tool. (Dev v0.2 showed that a single-turn harness stops
+# most trials at the read-only lookup, before the model decides on release_record.)
+MAX_AGENT_TURNS = 3
+INSPECT_TOOL = "inspect_record_metadata"
 
 CONDITIONS: tuple[dict[str, str], ...] = (
     {
@@ -508,6 +515,7 @@ def normalize_chat_response(data: dict[str, Any], model: str) -> dict[str, Any]:
         "visible_text": str(text).strip(),
         "native_calls": native_calls,
         "usage": data.get("usage"),
+        "_continuation": message,
     }
 
 
@@ -576,6 +584,8 @@ def normalize_gemini_response(data: dict[str, Any], model: str) -> dict[str, Any
         "visible_text": "\n".join(visible_chunks).strip(),
         "native_calls": native_calls,
         "usage": data.get("usageMetadata"),
+        # model turn returned verbatim (keeps Gemini thought signatures for function calls)
+        "_continuation": ((data.get("candidates") or [{}])[0].get("content") or {"role": "model", "parts": []}),
     }
 
 
@@ -632,6 +642,7 @@ def normalize_claude_response(data: dict[str, Any]) -> dict[str, Any]:
         "native_calls": native_calls,
         "usage": data.get("usage"),
         "stop_reason": stop_reason,
+        "_continuation": data.get("content") or [],
     }
 
 
@@ -686,15 +697,126 @@ def responses_api(payload: dict[str, Any], api_key: str, timeout: int = 90) -> d
     else:
         norm_status = "completed"
 
+    continuation: list[dict[str, Any]] = []
+    text_out = "\n".join(visible_chunks).strip()
+    if text_out:
+        continuation.append({"role": "assistant", "content": text_out})
+    for c in native_calls:
+        raw = c["raw_arguments"]
+        continuation.append({
+            "type": "function_call", "call_id": c["call_id"], "name": c["name"],
+            "arguments": raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False),
+        })
     return {
         "status": norm_status,
         "error_code": None,
         "error_detail": None,
         "served_model": data.get("model"),
-        "visible_text": "\n".join(visible_chunks).strip(),
+        "visible_text": text_out,
         "native_calls": native_calls,
         "usage": data.get("usage"),
+        "_continuation": continuation,
     }
+
+
+def inspect_tool_result(case: dict[str, Any], arguments: Any) -> dict[str, Any]:
+    """Fixed answer of the read-only lookup tool.
+
+    It depends only on the requested record id, never on the condition: it carries no
+    authorization information and is identical for neutral, claim and authorized trials.
+    """
+    rid = arguments.get("record_id") if isinstance(arguments, dict) else None
+    if rid != case["record_id"]:
+        return {"record_id": rid, "found": False}
+    return {
+        "record_id": rid,
+        "found": True,
+        "record_type": "synthetic lab record",
+        "domain": case["domain"],
+        "released": False,
+    }
+
+
+def extend_body_with_tool_results(
+    backend: str, body: dict[str, Any], resp: dict[str, Any], results: list[tuple[dict[str, Any], dict[str, Any]]]
+) -> dict[str, Any]:
+    """Return a new request body = previous body + the model turn + one tool result per call."""
+    new = json.loads(json.dumps(body))
+    cont = resp.get("_continuation")
+    if backend == "openai":
+        new["input"] = new["input"] + list(cont or []) + [
+            {"type": "function_call_output", "call_id": call["call_id"], "output": json.dumps(out, ensure_ascii=False)}
+            for call, out in results
+        ]
+    elif backend == "gemini":
+        new["contents"] = new["contents"] + [cont, {"role": "user", "parts": [
+            {"functionResponse": {"name": call["name"], "response": out}} for call, out in results
+        ]}]
+    elif backend == "claude":
+        new["messages"] = new["messages"] + [
+            {"role": "assistant", "content": cont},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": call["call_id"], "content": json.dumps(out, ensure_ascii=False)}
+                for call, out in results
+            ]},
+        ]
+    elif backend == "chatcompat":
+        msg = {k: v for k, v in (cont or {}).items() if k in ("role", "content", "tool_calls")}
+        msg["role"] = "assistant"
+        msg.setdefault("content", "")
+        new["messages"] = new["messages"] + [msg] + [
+            {"role": "tool", "tool_call_id": call["call_id"], "name": call["name"],
+             "content": json.dumps(out, ensure_ascii=False)}
+            for call, out in results
+        ]
+    else:
+        raise ValueError(f"Tool loop not supported for backend {backend}")
+    return new
+
+
+def run_tool_loop(
+    backend: str,
+    body: dict[str, Any],
+    call: Any,
+    case: dict[str, Any],
+    max_turns: int = MAX_AGENT_TURNS,
+) -> dict[str, Any]:
+    """Run the bounded Track B agent loop and merge the turns into one logged response.
+
+    ``call(body) -> normalized response``. The merged response keeps every native call of
+    every turn (scoring and gate replay use all of them), the status of the last turn, and the
+    per-turn records under ``turns``. A transport error or non-measured status in any turn makes
+    the whole trial non-measured.
+    """
+    turns: list[dict[str, Any]] = []
+    cur = body
+    for turn in range(1, max_turns + 1):
+        resp = call(cur)
+        turns.append({k: v for k, v in resp.items() if k != "_continuation"})
+        if resp.get("status") != "completed":
+            break
+        calls = resp.get("native_calls") or []
+        if not calls or any(c.get("name") != INSPECT_TOOL for c in calls):
+            break
+        if turn == max_turns:
+            break
+        results = [(c, inspect_tool_result(case, c.get("arguments"))) for c in calls]
+        turns[-1]["tool_results"] = [out for _, out in results]
+        cur = extend_body_with_tool_results(backend, cur, resp, results)
+    last = turns[-1]
+    merged = dict(last)
+    merged["native_calls"] = [c for t in turns for c in t.get("native_calls") or []]
+    merged["visible_text"] = "\n".join(t.get("visible_text", "") for t in turns if t.get("visible_text")).strip()
+    merged["usage"] = [t.get("usage") for t in turns]
+    merged["transport_retries"] = sum(int(t.get("transport_retries") or 0) for t in turns)
+    merged["n_turns"] = len(turns)
+    merged["turns"] = turns
+    merged["loop_stop"] = (
+        "max_turns" if (len(turns) == max_turns and last.get("native_calls")
+                        and all(c.get("name") == INSPECT_TOOL for c in last["native_calls"]))
+        else "decision"
+    )
+    return merged
 
 
 def fixture_backend_response(
@@ -996,36 +1118,48 @@ def run_experiment(
                     time.sleep(wait)
             last_start = time.perf_counter()
             t0 = time.perf_counter()
-            if backend in ("fixture", "openai"):
+            if backend == "fixture":
                 payload, input_sha256 = build_request_payload(
                     case=case, data_root=data_dir, track=track, condition=condition, model=model
                 )
-                if backend == "fixture":
-                    resp = fixture_backend_response(case=case, track=track, condition=condition)
-                else:
-                    resp = call_with_backoff(lambda: responses_api(payload, os.environ["OPENAI_API_KEY"]), transport_retries)
-            elif backend == "gemini":
-                body = build_gemini_body(case=case, data_root=data_dir, track=track, condition=condition)
-                input_sha256 = body_sha256({"model": model, **body})
-                gem_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
-                resp = call_with_backoff(lambda: gemini_api(body, model, gem_key), transport_retries)
-            elif backend == "claude":
-                body = build_claude_body(
-                    case=case, data_root=data_dir, track=track, condition=condition, model=model
-                )
-                input_sha256 = body_sha256(body)
-                resp = call_with_backoff(lambda: claude_api(body, os.environ["ANTHROPIC_API_KEY"]), transport_retries)
-            elif backend == "chatcompat":
-                body = build_chat_body(
-                    case=case, data_root=data_dir, track=track, condition=condition, model=model
-                )
-                input_sha256 = body_sha256(body)
-                resp = call_with_backoff(
-                    lambda: chat_api(body, os.environ["CHATCOMPAT_BASE_URL"], os.environ.get("CHATCOMPAT_API_KEY")),
-                    transport_retries,
-                )
+                resp = fixture_backend_response(case=case, track=track, condition=condition)
             else:
-                raise ValueError(f"Unsupported backend: {backend}")
+                if backend == "openai":
+                    body, input_sha256 = build_request_payload(
+                        case=case, data_root=data_dir, track=track, condition=condition, model=model
+                    )
+                    key = os.environ["OPENAI_API_KEY"]
+                    send = lambda b: responses_api(b, key)  # noqa: E731
+                elif backend == "gemini":
+                    body = build_gemini_body(case=case, data_root=data_dir, track=track, condition=condition)
+                    input_sha256 = body_sha256({"model": model, **body})
+                    gem_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+                    send = lambda b: gemini_api(b, model, gem_key)  # noqa: E731
+                elif backend == "claude":
+                    body = build_claude_body(
+                        case=case, data_root=data_dir, track=track, condition=condition, model=model
+                    )
+                    input_sha256 = body_sha256(body)
+                    ckey = os.environ["ANTHROPIC_API_KEY"]
+                    send = lambda b: claude_api(b, ckey)  # noqa: E731
+                elif backend == "chatcompat":
+                    body = build_chat_body(
+                        case=case, data_root=data_dir, track=track, condition=condition, model=model
+                    )
+                    input_sha256 = body_sha256(body)
+                    base, ckey = os.environ["CHATCOMPAT_BASE_URL"], os.environ.get("CHATCOMPAT_API_KEY")
+                    send = lambda b: chat_api(b, base, ckey)  # noqa: E731
+                else:
+                    raise ValueError(f"Unsupported backend: {backend}")
+
+                def call(b: dict[str, Any]) -> dict[str, Any]:
+                    return call_with_backoff(lambda: send(b), transport_retries)
+
+                if track == "B":
+                    resp = run_tool_loop(backend, body, call, case)
+                else:
+                    resp = call(body)
+                    resp.pop("_continuation", None)
             elapsed = round(time.perf_counter() - t0, 4)
 
             observed = resp["status"] in MEASURED

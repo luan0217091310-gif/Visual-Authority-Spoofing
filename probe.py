@@ -87,15 +87,18 @@ def _image_b64(data_root: Path, asset: dict[str, Any]) -> str:
     return base64.b64encode(path.read_bytes()).decode("ascii")
 
 
-def _ask(backend: str, model: str, b64: str, variant: str) -> tuple[dict[str, Any], str]:
-    """Send one probe request; return (normalized response, request hash)."""
+def _ask(
+    backend: str, model: str, b64: str, variant: str, question: str = PROBE_QUESTION, max_tokens: int = 16,
+    fixture_text: str | None = None,
+) -> tuple[dict[str, Any], str]:
+    """Send one image + closed question (no system prompt, no tools); return (response, request hash)."""
     if backend == "fixture":
-        body = {"model": model, "question": PROBE_QUESTION, "image_sha256_prefix": b64[:16]}
+        body = {"model": model, "question": question, "image_sha256_prefix": b64[:16]}
         return (
             {
                 "status": "completed",
                 "served_model": model,
-                "visible_text": EXPECTED[variant],
+                "visible_text": fixture_text if fixture_text is not None else EXPECTED[variant],
                 "native_calls": [],
                 "usage": None,
             },
@@ -106,13 +109,13 @@ def _ask(backend: str, model: str, b64: str, variant: str) -> tuple[dict[str, An
             "model": model,
             "store": False,
             "temperature": 0,
-            "max_output_tokens": 16,
+            "max_output_tokens": max_tokens,
             "input": [
                 {
                     "role": "user",
                     "content": [
                         {"type": "input_image", "image_url": f"data:image/png;base64,{b64}", "detail": "high"},
-                        {"type": "input_text", "text": PROBE_QUESTION},
+                        {"type": "input_text", "text": question},
                     ],
                 }
             ],
@@ -144,7 +147,7 @@ def _ask(backend: str, model: str, b64: str, variant: str) -> tuple[dict[str, An
                     "role": "user",
                     "content": [
                         {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-                        {"type": "text", "text": PROBE_QUESTION},
+                        {"type": "text", "text": question},
                     ],
                 }
             ],
@@ -161,10 +164,10 @@ def _ask(backend: str, model: str, b64: str, variant: str) -> tuple[dict[str, An
             "contents": [
                 {"role": "user", "parts": [
                     {"inline_data": {"mime_type": "image/png", "data": b64}},
-                    {"text": PROBE_QUESTION},
+                    {"text": question},
                 ]}
             ],
-            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 16},
+            "generationConfig": {"temperature": 0.0, "maxOutputTokens": max_tokens},
         }
         key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
         result = _post_json(GEMINI_URL_TEMPLATE.format(model=model), body, {"x-goog-api-key": key}, 90)
@@ -175,10 +178,10 @@ def _ask(backend: str, model: str, b64: str, variant: str) -> tuple[dict[str, An
         body = {
             "model": model,
             "temperature": 0,
-            "max_tokens": 16,
+            "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
-                {"type": "text", "text": PROBE_QUESTION},
+                {"type": "text", "text": question},
             ]}],
         }
         return (chat_api(body, os.environ["CHATCOMPAT_BASE_URL"], os.environ.get("CHATCOMPAT_API_KEY")),
@@ -211,6 +214,7 @@ def run_probe(*, backend: str, live: bool, model: str, data_dir: Path, out_log: 
             def _call() -> dict[str, Any]:
                 r, h = _ask(backend, model, b64, variant)
                 holder["h"] = h
+                r.pop("_continuation", None)
                 return r
 
             resp = call_with_backoff(_call)

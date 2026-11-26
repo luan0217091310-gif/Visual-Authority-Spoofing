@@ -29,3 +29,11 @@
 - Gemini 3.1 Flash-Lite (gói miễn phí) có 12/22 lượt bị cắt ở 192 token; log lưu ở `runs/pilot/pilot_dev_gemini31fl_maxtok192.jsonl`.
 - Quyết định: `max_output_tokens = 512` cho **mọi** backend (Claude vẫn 2.048), để giao thức nhất quán giữa các mô hình.
 - Phép thử đọc Gemini 3.1 Flash-Lite trên dev: 16/16.
+
+## 2026-11-27 — Cổng dev Hướng B trượt ở bản một phản hồi
+- Gemini 3.1 Flash-Lite, dev đủ 384/384 lượt (một phản hồi):
+  - Hướng A: 0/24 sự kiện ở mọi điều kiện không quyền; có quyền 48/48. Đạt cổng.
+  - Hướng B: `claim_image_authorized` 21/24, `none_authorized` 7/24, tổng 28/48 (58%). Trượt cổng 80%.
+- Nguyên nhân: 17/24 lượt `none_authorized` và 9/24 lượt `claim_image` chỉ gọi `inspect_record_metadata` rồi dừng. Harness một phản hồi kết thúc trước khi mô hình quyết định có gọi `release_record` hay không. Qwen (219 lượt đầu) cũng vậy: 12/16 lượt `claim_image` dừng ở tra cứu.
+- Sửa: vòng lặp tác tử có giới hạn (`run_tool_loop`, tối đa 3 phản hồi). Công cụ tra cứu trả metadata cố định `{record_id, found, record_type, domain, released: false}`, độc lập với điều kiện. Kiểm thử `test_17` với mô hình giả cho cả 4 adapter; chạy thử thật trên Gemini (2 lượt: tra cứu → release đúng quyền) và Qwen (1 lượt).
+- Log cũ: `runs/pilot/pilot_dev_*_singleturnB.jsonl`. Log mới giữ nguyên các dòng Hướng A (body không đổi), chạy lại Hướng B.

@@ -15,7 +15,7 @@ Frame (frozen in R1): target CORE A (ứng viên ESORICS, LNCS) · contribution 
 | I-002 | PARTIALLY FIXED | Bài và prereg đăng ký nhóm mô hình (≥2 thương mại + 1 mở), Holm riêng từng mô hình; thêm backend `chatcompat` cho mô hình mở; Table 4 sinh một hàng mỗi mô hình (đã thử bằng báo cáo giả rồi xóa). Còn thiếu: tên mô hình M2–M4 trong prereg. |
 | I-003 | PARTIALLY FIXED | Bài nêu MDE 80%: 16 điểm (n=120), 11 điểm (n=240). Quyết định cỡ holdout chờ tác giả (Q3). |
 | I-004 | FIX_CLAIMED → RESOLVED (self-check) | Thêm 5 nguồn đã kiểm qua arXiv/Crossref (MMA-SafetyBench, DIBench, Repeat-After-Me, CaMeL, Zeng et al. ACL 2024 — “Authority Endorsement” kiểm trong Table 1 của bài gốc); câu định vị so với MMA-SafetyBench ở §2. |
-| I-005 | PARTIALLY FIXED | `tools/annotation.py` + phiếu chấm 240 ảnh tại `review/annotation/`; quy trình mô tả ở §4. Chưa có kết quả chấm. |
+| I-005 | PARTIALLY FIXED | Chưa có người chấm. Thay tạm bằng hai mô hình chấm (`tools/model_raters.py`, chạy sau holdout xác nhận), ghi rõ là mô hình trong §4 và thêm vào Hạn chế (§8). Phiếu chấm người vẫn phát hành. |
 | I-006 | RESOLVED (self-check) | §3 nêu rõ tương phản pending → approval và vai trò `none_empty`. |
 | I-007 | RESOLVED (self-check) | §6: sign-flip là phép kiểm xác nhận, bootstrap mô tả, nêu giới hạn 6 họ/tầng. |
 | I-008 | RESOLVED (self-check) | §5 “Stability”; `tools/stability.py`; prereg. |
@@ -43,7 +43,7 @@ Frame (frozen in R1): target CORE A (ứng viên ESORICS, LNCS) · contribution 
 - **Problem:** chỉ một snapshot (gpt-4.1-mini) được đăng ký; không thể nói về “multimodal models” nói chung.
 - **Fix:** đăng ký trước một nhóm mô hình (≥ 3, khác nhà cung cấp, có ít nhất một mô hình mở); mỗi mô hình là một lần lặp độc lập với Holm riêng cho H1A/H1B; pipeline sinh bảng theo từng mô hình.
 - **Acceptance test:** prereg liệt kê nhóm mô hình trước khi khóa; `make_paper_numbers.py` sinh một hàng Table 4 cho mỗi báo cáo xác nhận.
-- **History:** R1 opened
+- **History:** R1 opened; 2026-11-27: thêm kiểm tra bằng mô hình chấm, nêu rõ chưa có người đọc trong Hạn chế. Vẫn mở cho tới khi có người chấm thật.
 
 ### I-003 · MAJOR · VERIFIED ERROR (design) · OPEN
 - **Location:** §6 "Planned power"

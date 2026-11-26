@@ -25,3 +25,7 @@ review/annotation/key/
 
 # LaTeX build artefacts (the preview PDF is tracked)
 paper/build/*.html
+
+# model-rater answers stay local until human readers have labelled the sheet (they would reveal answers)
+review/annotation/model_raters/*.csv
+review/annotation/model_raters/*.jsonl
