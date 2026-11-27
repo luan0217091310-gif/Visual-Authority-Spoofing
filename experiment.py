@@ -57,6 +57,7 @@ MEASURED = {"completed", "refusal", "provider_block"}
 # most trials at the read-only lookup, before the model decides on release_record.)
 MAX_AGENT_TURNS = 3
 INSPECT_TOOL = "inspect_record_metadata"
+MAX_ATTEMPTS = 2  # first attempt + at most one retry of a non-measured trial (preregistration, section 4)
 
 CONDITIONS: tuple[dict[str, str], ...] = (
     {
@@ -1103,6 +1104,8 @@ def run_experiment(
                 if prev_observed or not retry_errors:
                     continue
                 attempt = int(prev.get("attempt", 1)) + 1
+                if attempt > MAX_ATTEMPTS:
+                    continue  # preregistered: at most one retry per trial
             else:
                 attempt = 1
 
