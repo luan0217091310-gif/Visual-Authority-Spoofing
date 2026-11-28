@@ -95,7 +95,7 @@ digraph VAS {
     reg  [label="Registry grant\nempty | exact | other", fillcolor="#eff6ff"];
     tools[label="Tools: inspect_record_metadata,\nrelease_record (Track B)"];
   }
-  model [label="Model under test\n(one response)", shape=box, fillcolor="#fefce8"];
+  model [label="Model under test\n(1 turn A; <=3 turns B)", shape=box, fillcolor="#fefce8"];
   a    [label="Track A outcome:\ncanary disclosed?"];
   b    [label="Track B outcome:\nvalid release_record call?"];
   ng   [label="Replay without gate\n(schema + record id)"];
@@ -160,7 +160,7 @@ def fig_results() -> Path | None:
         ("none_authorized", "None\n(auth)"),
     ]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.2, 4.6), gridspec_kw={"width_ratios": [1.36, 1.0]})
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.2, 4.35), gridspec_kw={"width_ratios": [1.36, 1.0]})
     fig.patch.set_facecolor("white")
 
     # Panel (a): Track B proposal rates (M1 vs M3) and gated writes
@@ -180,25 +180,25 @@ def fig_results() -> Path | None:
         for c in conds
     ]
 
-    bars_g = ax1.bar(x - w, g_vals, w, label="gpt-4.1-mini (no gate)", color="#1d4ed8", edgecolor="#1e3a8a", linewidth=0.6)
+    ax1.bar(x - w, g_vals, w, label="gpt-4.1-mini (no gate)", color="#1d4ed8", edgecolor="#1e3a8a", linewidth=0.6)
     ax1.bar(x, q_vals, w, label="qwen3-vl:4b (no gate)", color="#dc2626", edgecolor="#7f1d1d", linewidth=0.6)
     ax1.bar(x + w, gate_vals, w, label="With auth. gate (both)", color="#059669", edgecolor="#065f46", linewidth=0.6)
-    # Annotate small non-zero GPT-4.1-mini unauthorized bars cleanly so 1.7%, 3.3%, 5.8% are legible
     for idx in (2, 4, 5):
         v = g_vals[idx]
         if v > 0:
-            ax1.text(x[idx] - w, v + 1.8, f"{v:.1f}%", ha="center", va="bottom", fontsize=7.0, color="#1d4ed8", fontweight="bold")
+            ax1.text(x[idx] - w - 0.04, v + 2.0, f"{v:.1f}%", ha="center", va="bottom", fontsize=8.0, color="#1d4ed8", fontweight="bold")
     ax1.axvline(5.5, color="#475569", linestyle="--", linewidth=0.9)
-    ax1.text(2.5, 103.5, "Unauthorized (target: 0%)", ha="center", va="bottom", fontsize=8.5, color="#991b1b", fontweight="bold")
-    ax1.text(6.5, 103.5, "Authorized", ha="center", va="bottom", fontsize=8.5, color="#065f46", fontweight="bold")
+    ax1.text(2.5, 103.5, "Unauthorized (target: 0%)", ha="center", va="bottom", fontsize=9.2, color="#991b1b", fontweight="bold")
+    ax1.text(6.5, 103.5, "Authorized", ha="center", va="bottom", fontsize=9.2, color="#065f46", fontweight="bold")
     ax1.set_xticks(x)
-    ax1.set_xticklabels([c[1] for c in conds], fontsize=7.8)
-    ax1.set_ylabel("Track B tool-call / write rate (%)", fontsize=8.8)
-    ax1.set_ylim(0, 114)
+    ax1.set_xticklabels([c[1] for c in conds], fontsize=8.4)
+    ax1.tick_params(axis="y", labelsize=8.6)
+    ax1.set_ylabel("Track B tool-call / write rate (%)", fontsize=9.4)
+    ax1.set_ylim(0, 115)
     ax1.grid(axis="y", linestyle=":", alpha=0.5)
     ax1.set_axisbelow(True)
-    ax1.set_title("(a) Track B holdout rates by condition (n = 120 each)", fontsize=9.4, fontweight="bold", pad=26)
-    ax1.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=3, fontsize=7.3, frameon=False, handlelength=1.3, columnspacing=0.9)
+    ax1.set_title("(a) Track B holdout rates by condition (n = 120 each)", fontsize=10.0, fontweight="bold", pad=27)
+    ax1.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=3, fontsize=8.0, frameon=False, handlelength=1.2, columnspacing=0.8)
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
 
@@ -211,8 +211,8 @@ def fig_results() -> Path | None:
     ]
     y_pos = np.arange(len(contrast_defs))[::-1]
     series = [
-        ("gpt-4.1-mini (Track B)", gpt, 0.15, "#1d4ed8", "s", "bottom", 0.08),
-        ("qwen3-vl:4b (Track B)", qwen, -0.15, "#dc2626", "o", "top", -0.09),
+        ("gpt-4.1-mini (Track B)", gpt, 0.16, "#1d4ed8", "s", "bottom", 0.09),
+        ("qwen3-vl:4b (Track B)", qwen, -0.16, "#dc2626", "o", "top", -0.10),
     ]
 
     ax2.axvline(0.0, color="#0f172a", linestyle="--", linewidth=0.9)
@@ -229,29 +229,33 @@ def fig_results() -> Path | None:
         ax2.errorbar(
             ests, ys, xerr=[lo_err, hi_err],
             fmt=mk, color=col, ecolor=col,
-            elinewidth=1.5, capsize=3, markersize=5.5, label=label,
+            elinewidth=1.6, capsize=3.2, markersize=5.8, label=label,
         )
         for est, yv in zip(ests, ys):
-            ax2.text(est, yv + txt_dy, f"{est:+.1f}", ha="center", va=va, fontsize=7.6, color=col, fontweight="bold")
+            x_txt = est + 4.0 if abs(est) < 10 else est
+            ax2.text(x_txt, yv + txt_dy, f"{est:+.1f}", ha="center", va=va, fontsize=8.4, color=col, fontweight="bold")
 
     ax2.set_yticks(y_pos)
-    ax2.set_yticklabels([c[0] for c in contrast_defs], fontsize=8)
-    ax2.set_xlabel("Track B paired risk difference (pp, 95% cluster CI)", fontsize=8.5)
+    ax2.set_yticklabels([c[0] for c in contrast_defs], fontsize=8.6)
+    ax2.tick_params(axis="x", labelsize=8.6)
+    ax2.set_xlabel("Track B paired risk difference (pp, 95% cluster CI)", fontsize=9.0)
     ax2.set_xlim(-72, 108)
     ax2.set_ylim(-0.65, len(contrast_defs) - 0.25)
     ax2.grid(axis="x", linestyle=":", alpha=0.5)
     ax2.set_axisbelow(True)
-    ax2.set_title("(b) Track B paired contrasts (24 workflow families)", fontsize=9.4, fontweight="bold", pad=26)
-    ax2.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=2, fontsize=7.4, frameon=False, handlelength=1.3, columnspacing=1.0)
+    ax2.set_title("(b) Track B paired contrasts (24 families)", fontsize=10.0, fontweight="bold", pad=27)
+    ax2.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=2, fontsize=8.0, frameon=False, handlelength=1.2, columnspacing=0.9)
     ax2.spines["top"].set_visible(False)
     ax2.spines["right"].set_visible(False)
 
     plt.tight_layout()
     FIG.mkdir(parents=True, exist_ok=True)
-    out = FIG / "fig_results.png"
-    fig.savefig(out, dpi=300)
+    out_png = FIG / "fig_results.png"
+    out_pdf = FIG / "fig_results.pdf"
+    fig.savefig(out_png, dpi=300)
+    fig.savefig(out_pdf)
     plt.close(fig)
-    return out
+    return out_png
 
 
 if __name__ == "__main__":

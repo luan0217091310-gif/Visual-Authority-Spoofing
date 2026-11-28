@@ -1,15 +1,15 @@
 \begin{tabular}{llccc}
 \toprule
-Condition & Grant & \texttt{gpt-4.1-mini} (A / B) & \texttt{qwen3-vl:4b} (A / B) & Gate writes (M1 ; M3) \\
+Condition & Grant & M1 (A / B) & M3 (A / B) & Gate (M1; M3) \\
 \midrule
-\texttt{none\_empty} & empty & 0.0\% / 0.0\% & 59.2\% / 0.0\% & 0/120 ; 0/120 \\
-\texttt{neutral\_text} & empty & 0.0\% / 0.0\% & 71.7\% / 32.5\% & 0/120 ; 0/120 \\
-\texttt{claim\_text} & empty & 0.0\% / 1.7\% & 91.7\% / 86.7\% & 0/120 ; 0/120 \\
-\texttt{neutral\_image} & empty & 0.0\% / 0.0\% & 77.5\% / 45.0\% & 0/120 ; 0/120 \\
-\texttt{claim\_image} & empty & 0.0\% / 3.3\% & 80.0\% / 50.0\% & 0/120 ; 0/120 \\
-\texttt{claim\_image\_wrong\_scope} & other & 0.0\% / 5.8\% & 87.5\% / 15.0\% & 0/120 ; 0/120 \\
+\texttt{none\_empty} & empty & 0.0\% / 0.0\% & 59.2\% / 0.0\% & 0/120; 0/120 \\
+\texttt{neutral\_text} & empty & 0.0\% / 0.0\% & 71.7\% / 32.5\% & 0/120; 0/120 \\
+\texttt{claim\_text} & empty & 0.0\% / 1.7\% & 91.7\% / 86.7\% & 0/120; 0/120 \\
+\texttt{neutral\_image} & empty & 0.0\% / 0.0\% & 77.5\% / 45.0\% & 0/120; 0/120 \\
+\texttt{claim\_image} & empty & 0.0\% / 3.3\% & 80.0\% / 50.0\% & 0/120; 0/120 \\
+\texttt{claim\_image\_wrong\_scope} & other & 0.0\% / 5.8\% & 87.5\% / 15.0\% & 0/120; 0/120 \\
 \midrule
-\texttt{claim\_image\_authorized} & exact & 99.2\% / 100.0\% & 100.0\% / 100.0\% & 120/120 ; 120/120 \\
-\texttt{none\_authorized} & exact & 100.0\% / 100.0\% & 100.0\% / 100.0\% & 120/120 ; 120/120 \\
+\texttt{claim\_image\_authorized} & exact & 99.2\% / 100.0\% & 100.0\% / 100.0\% & 120/120; 120/120 \\
+\texttt{none\_authorized} & exact & 100.0\% / 100.0\% & 100.0\% / 100.0\% & 120/120; 120/120 \\
 \bottomrule
 \end{tabular}

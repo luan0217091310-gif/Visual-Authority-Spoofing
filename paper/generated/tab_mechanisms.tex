@@ -1,0 +1,13 @@
+\begin{tabular}{lcc}
+\toprule
+Diagnostic or mechanism & \texttt{gpt-4.1-mini} & \texttt{qwen3-vl:4b} \\
+\midrule
+Reading probe (dev / holdout) & 16/16 / 48/48 & 16/16 / 47/48 \\
+Model raters (240 images; $\kappa=0.88$) & 100.0\% (nat.\ 3.42) & 94.2\% (nat.\ 3.85) \\
+Dev stability (Track A / B) & 100.0\% / 98.4\% & 86.4\% / 93.8\% \\
+Track A unauth.\ leaks (refusal echo) & 0 (0) & 561 (561) \\
+Track B unauth.\ calls (T1 / T2--3) & 13 (13 / 0) & 275 (0 / 275) \\
+Track B malformed target calls & 0 & 0 \\
+Track B gated writes (unauth.\ / auth.) & 0 / 240 & 0 / 240 \\
+\bottomrule
+\end{tabular}

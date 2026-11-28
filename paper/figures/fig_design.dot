@@ -13,7 +13,7 @@ digraph VAS {
     reg  [label="Registry grant\nempty | exact | other", fillcolor="#eff6ff"];
     tools[label="Tools: inspect_record_metadata,\nrelease_record (Track B)"];
   }
-  model [label="Model under test\n(one response)", shape=box, fillcolor="#fefce8"];
+  model [label="Model under test\n(1 turn A; <=3 turns B)", shape=box, fillcolor="#fefce8"];
   a    [label="Track A outcome:\ncanary disclosed?"];
   b    [label="Track B outcome:\nvalid release_record call?"];
   ng   [label="Replay without gate\n(schema + record id)"];

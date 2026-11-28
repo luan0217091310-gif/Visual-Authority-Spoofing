@@ -209,25 +209,50 @@ def fmt_ci(ci: list[float] | None, nd: int = 1) -> str:
 
 
 def write_results_table(reps: list[dict[str, Any]]) -> None:
-    """Table 4 rows: one per model and track; a single pending row per track before any run."""
+    """Table 4 rows: one per model and track; compact enough for 122 mm LNCS width."""
+    short_name = {
+        "gpt-4.1-mini-2025-04-14": "gpt-4.1-mini",
+        "qwen3-vl:4b-instruct": "qwen3-vl:4b",
+        "gemini-3.1-flash-lite": "gemini-3.1-fl",
+    }
     lines = []
     if not reps:
-        for track, label in (("A", "A (canary)"), ("B", "B (tool call)")):
+        for track, label in (("A", "A"), ("B", "B")):
             lines.append(f"\\textit{{registered panel}} & {label} & {PENDING} & {PENDING} & {PENDING} & "
                          f"{PENDING} & {PENDING} & {PENDING} \\\\")
     for rep in reps:
-        model = tex_escape(", ".join(rep.get("served_models") or rep.get("requested_models") or ["?"]))
+        raw_model = ", ".join(rep.get("served_models") or rep.get("requested_models") or ["?"])
+        model = tex_escape(short_name.get(raw_model, raw_model))
         m = results_macros(rep)
-        for track, label in (("A", "A (canary)"), ("B", "B (tool call)")):
+        for track in ("A", "B"):
             lines.append(
-                f"\\texttt{{{model}}} & {label} & {m[f'res{track}Claim']} & {m[f'res{track}Neutral']} & "
+                f"\\texttt{{{model}}} & {track} & {m[f'res{track}Claim']} & {m[f'res{track}Neutral']} & "
                 f"{m[f'res{track}Pairs']} & {m[f'res{track}Est']} {m[f'res{track}CI']} & "
                 f"{m[f'res{track}PHolm']} & {m[f'res{track}Inter']} \\\\"
             )
     (OUT / "tab_results.tex").write_text(
         "\\begin{tabular}{llcccccc}\n\\toprule\n"
-        "Model & Track & Claim & Neutral & Pairs & $\\Delta_{\\text{image}}$ [95\\% CI] & $p_{\\text{Holm}}$ & Interaction \\\\\n"
+        "Model & Trk & Claim & Neut. & Pairs & $\\Delta_{\\text{image}}$ [95\\% CI] & $p_{\\text{Holm}}$ & Inter. \\\\\n"
         "\\midrule\n" + "\n".join(lines) + "\n\\bottomrule\n\\end{tabular}\n",
+        encoding="utf-8",
+    )
+
+
+def write_mechanisms_table(m: dict[str, str]) -> None:
+    """Table 6: side-by-side diagnostic and mechanistic comparison of completed confirmatory models."""
+    rows = [
+        f"Reading probe (dev / holdout) & {m.get('ProbeDevGpt', PENDING)} / {m.get('ProbeHoldGpt', PENDING)} & {m.get('ProbeDevQwen', PENDING)} / {m.get('ProbeHoldQwen', PENDING)} \\\\",
+        f"Model raters (240 images; $\\kappa={m.get('RaterKappa', PENDING)}$) & {m.get('RaterGptAcc', PENDING)}\\% (nat.\\ {m.get('RaterGptNat', PENDING)}) & {m.get('RaterQwenAcc', PENDING)}\\% (nat.\\ {m.get('RaterQwenNat', PENDING)}) \\\\",
+        f"Dev stability (Track A / B) & {m.get('StabGptA', PENDING)}\\% / {m.get('StabGptB', PENDING)}\\% & {m.get('StabQwenA', PENDING)}\\% / {m.get('StabQwenB', PENDING)}\\% \\\\",
+        f"Track A unauth.\\ leaks (refusal echo) & {m.get('GptAUnauthTotal', PENDING)} ({m.get('GptARefusalEcho', PENDING)}) & {m.get('QwenAUnauthTotal', PENDING)} ({m.get('QwenARefusalEcho', PENDING)}) \\\\",
+        f"Track B unauth.\\ calls (T1 / T2--3) & {m.get('GptBUnauthNoGate', PENDING)} ({m.get('GptBUnauthTurnOne', PENDING)} / {int(m.get('GptBUnauthTurnTwo', '0')) + int(m.get('GptBUnauthTurnThree', '0'))}) & {m.get('QwenBUnauthNoGate', PENDING)} ({m.get('QwenBUnauthTurnOne', PENDING)} / {int(m.get('QwenBUnauthTurnTwo', '0')) + int(m.get('QwenBUnauthTurnThree', '0'))}) \\\\",
+        f"Track B malformed target calls & {m.get('GptBMalformed', PENDING)} & {m.get('QwenBMalformed', PENDING)} \\\\",
+        f"Track B gated writes (unauth.\\ / auth.) & {m.get('GptBUnauthWithGate', PENDING)} / {m.get('GptBAuthWithGate', PENDING)} & {m.get('QwenBUnauthWithGate', PENDING)} / {m.get('QwenBAuthWithGate', PENDING)} \\\\",
+    ]
+    (OUT / "tab_mechanisms.tex").write_text(
+        "\\begin{tabular}{lcc}\n\\toprule\n"
+        "Diagnostic or mechanism & \\texttt{gpt-4.1-mini} & \\texttt{qwen3-vl:4b} \\\\\n"
+        "\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}\n",
         encoding="utf-8",
     )
 
@@ -268,13 +293,13 @@ def write_conditions_table(reps: list[dict[str, Any]]) -> None:
 
     rows = []
     for cid, grant in cond_order:
-        g_cell = f"{_gate(gpt, cid, grant)} ; {_gate(qwen, cid, grant)}"
+        g_cell = f"{_gate(gpt, cid, grant)}; {_gate(qwen, cid, grant)}"
         rows.append(
             f"\\texttt{{{tex_escape(cid)}}} & {grant} & {_pair(gpt, cid)} & {_pair(qwen, cid)} & {g_cell} \\\\"
         )
     (OUT / "tab_conditions.tex").write_text(
         "\\begin{tabular}{llccc}\n\\toprule\n"
-        "Condition & Grant & \\texttt{gpt-4.1-mini} (A / B) & \\texttt{qwen3-vl:4b} (A / B) & Gate writes (M1 ; M3) \\\\\n"
+        "Condition & Grant & M1 (A / B) & M3 (A / B) & Gate (M1; M3) \\\\\n"
         "\\midrule\n" + "\n".join(rows[:6]) + "\n\\midrule\n" + "\n".join(rows[6:]) + "\n\\bottomrule\n\\end{tabular}\n",
         encoding="utf-8",
     )
@@ -614,6 +639,7 @@ def main() -> int:
     write_tables(dev, hold)
     write_results_table(reps)
     write_conditions_table(reps)
+    write_mechanisms_table(m)
     print(json.dumps({"macros": len(m), "live_models": len(reps), "tests": tests,
                       "determinism": determ}, indent=2))
     return 0
