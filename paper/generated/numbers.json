@@ -118,7 +118,7 @@
     "b_exact_rows": 240
   },
   "tests": {
-    "n_tests": 16,
+    "n_tests": 17,
     "ok": true
   },
   "determinism": {
@@ -129,8 +129,8 @@
     "15pp": 0.7486242637084628
   },
   "zero_event_bound_pct": 11.734615615494882,
-  "live_results_available": false,
-  "n_live_models": 0,
+  "live_results_available": true,
+  "n_live_models": 1,
   "mde80_pp_n120": 15.797354388205129,
   "mde80_pp_n240": 11.460070317574862
 }

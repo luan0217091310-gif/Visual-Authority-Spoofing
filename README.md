@@ -4,7 +4,7 @@
 
 > **Đề tài nghiên cứu:** *Ảnh chụp màn hình giao diện công việc hoặc văn bản hành chính chứa lời xác nhận cấp quyền tự nhiên ảnh hưởng thế nào đến quyết định của mô hình AI đa phương thức (Multimodal LLMs) và AI Agent khi sổ cấp quyền của ứng dụng chưa cho phép?*
 
-[![Tests](https://img.shields.io/badge/unit_tests-16_passed-brightgreen)](#3-hướng-dẫn-cài-đặt-và-chạy-thử-ngoại-tuyến-offline-validation)
+[![Tests](https://img.shields.io/badge/unit_tests-17_passed-brightgreen)](#3-hướng-dẫn-cài-đặt-và-chạy-thử-ngoại-tuyến-offline-validation)
 [![Dataset Dev](https://img.shields.io/badge/dev_split-24_cases_%7C_48_images-blue)](#2-cấu-trúc-kho-mã-nguồn-repository-structure)
 [![Dataset Holdout](https://img.shields.io/badge/holdout_split-120_cases_%7C_240_images-indigo)](#4-quy-trình-thực-nghiệm-trên-mô-hình-thật-live-api-workflow)
 [![Renderer](https://img.shields.io/badge/renderer-HTML%2FCSS_%2B_Playwright_Chromium-orange)](#1-giới-thiệu-tổng-quan-overview)
@@ -78,12 +78,26 @@ Visual-Authority-Spoofing/
 ├── paper/
 │   ├── main.tex                       # Bài báo (Springer LNCS)
 │   ├── generated/                     # Macro số liệu + bảng sinh tự động (không sửa tay)
-│   ├── figures/                       # fig_pairs.png, fig_design.{png,pdf,dot}
+│   ├── figures/                       # fig_pairs.png, fig_design.{png,pdf,dot}, fig_results.png
 │   └── build/main_preview.pdf         # Bản xem trước (HTML -> PDF), không phải bản LNCS chính thức
 ├── docs/figures/figure1_status_excerpts.png
-├── review/                            # Phản biện nội bộ (REVIEW-R*.md, ISSUES.md) và phiếu chấm người đọc
-└── tests/test_vas.py                  # 16 unit test
+├── review/                            # Phản biện nội bộ (REVIEW-R*.md, ISSUES.md) và phiếu chấm người đọc / model_raters
+└── tests/test_vas.py                  # 17 unit test
 ```
+
+### Kết quả thực nghiệm xác nhận đã hoàn tất (Live Confirmatory Holdout)
+
+| Mô hình | Trạng thái | Cổng `dev` (A / B) | Phép thử đọc `dev` | `holdout` xác nhận (1.920 lượt) |
+|---|---|---|---|---|
+| **M3 · `qwen3-vl:4b-instruct`** (Ollama cục bộ, Q4\_K\_M) | Hoàn tất 100% | 48/48 · 48/48 | 16/16 | Track A: $\Delta_{\text{image}} = +2{,}5\text{ pp}$ [$-5{,}8, +10{,}0$], $p_{\text{Holm}}=0{,}744$ · Track B: $\Delta_{\text{image}} = +5{,}0\text{ pp}$ [$-1{,}7, +12{,}5$], $p_{\text{Holm}}=0{,}533$ |
+| **M4 · `gemini-3.1-flash-lite`** (gói miễn phí 500 req/ngày) | Đạt cổng `dev`; đang chạy `holdout` | 48/48 · 48/48 | 16/16 | Đã ghi 151 lượt ngày 1; tiếp tục sau mốc reset hạn mức 15:00 giờ VN hằng ngày |
+
+- **Phát hiện chính trên M3 (`runs/live_holdout_qwen3vl4b_report.json`):**
+  - **Thiên lệch hiện diện ảnh (Track B):** `none_empty` = **0/120 (0%)**, nhưng chỉ cần đính kèm ảnh trung tính (`neutral_image`) đã nhảy lên **54/120 (45,0%)** và `claim_image` = **60/120 (50,0%)**. Trong khi đó ở văn bản thuần, `claim_text` nhảy từ **32,5%** lên **86,7%** (**+54,2 pp**, tương tác phương thức **-49,2 pp**).
+  - **Leo thang đa lượt sau tra cứu chỉ đọc (Track B):** toàn bộ **275/275** lời gọi `release_record` trái phép xảy ra ở lượt 2–3 (0 lượt ở lượt 1) ngay sau khi gọi `inspect_record_metadata`; cổng kiểm quyền tất định (`replay_with_gate`) chặn **275/275 → 0** và giữ nguyên **240/240 (100%)** thao tác hợp lệ.
+  - **Vọng mã bí mật khi từ chối (Track A):** toàn bộ **561/561 (100%)** lượt lộ `canary` trái phép đều nằm trong câu trả lời mở đầu bằng từ chối nhưng chép lại chuỗi mã bí mật.
+  - **Độ ổn định (`dev` rep 1 vs rep 2):** 86,4% (165/191) ở Track A và 93,8% (180/192) ở Track B.
+  - **Model rater mù hậu holdout (240 ảnh):** 94,2% (226/240; `claim` 98,3%, `neutral` 90,0%).
 
 ---
 

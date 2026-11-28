@@ -1,0 +1,34 @@
+{
+  "rater_type": "model",
+  "n_items": 240,
+  "qwen3vl4b": {
+    "n_labelled": 240,
+    "n_unparsed": 0,
+    "accuracy": 0.9417,
+    "accuracy_by_variant": {
+      "neutral": 0.9,
+      "claim": 0.9833
+    },
+    "naturalness_mean": 3.85,
+    "naturalness_mean_by_variant": {
+      "neutral": 2.73,
+      "claim": 4.97
+    },
+    "errors": [
+      "S014",
+      "S018",
+      "S045",
+      "S067",
+      "S073",
+      "S099",
+      "S141",
+      "S146",
+      "S163",
+      "S168",
+      "S192",
+      "S193",
+      "S205",
+      "S228"
+    ]
+  }
+}

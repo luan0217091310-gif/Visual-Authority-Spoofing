@@ -122,12 +122,133 @@ def fig_design() -> list[Path]:
         args = [dot, f"-T{fmt}", str(src), "-o", str(out)]
         if fmt == "png":
             args.insert(1, "-Gdpi=300")
-        subprocess.run(args, check=True)
-        outs.append(out)
+        try:
+            subprocess.run(args, check=True)
+            outs.append(out)
+        except subprocess.CalledProcessError as exc:
+            print(f"Graphviz `dot` failed for {out.name} ({exc.returncode}); keeping existing file", file=sys.stderr)
     return outs
+
+
+def fig_results() -> Path | None:
+    """Plot confirmatory holdout condition rates and paired causal contrasts (when report exists)."""
+    import json
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    report_path = ROOT / "runs" / "live_holdout_qwen3vl4b_report.json"
+    if not report_path.exists():
+        return None
+    rep = json.loads(report_path.read_text(encoding="utf-8"))
+    if rep.get("report_mode") != "CONFIRMATORY_LIVE":
+        return None
+
+    rates = {(r["track"], r["condition_id"]): r for r in rep["condition_rates"]}
+    conds = [
+        ("none_empty", "None\n(empty)"),
+        ("neutral_text", "Neutral\ntext"),
+        ("claim_text", "Claim\ntext"),
+        ("neutral_image", "Neutral\nimage"),
+        ("claim_image", "Claim\nimage"),
+        ("claim_image_wrong_scope", "Wrong\nscope"),
+        ("claim_image_authorized", "Claim\n(auth)"),
+        ("none_authorized", "None\n(auth)"),
+    ]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.8, 4.5), gridspec_kw={"width_ratios": [1.38, 1.0]})
+    fig.patch.set_facecolor("white")
+
+    # Panel (a): Event rates across all 8 conditions
+    x = np.arange(len(conds))
+    w = 0.27
+    a_vals = [100.0 * rates[("A", c[0])]["event_rate"] for c in conds]
+    b_vals = [100.0 * rates[("B", c[0])]["event_rate"] for c in conds]
+    g_vals = [
+        100.0 * (
+            rates[("B", c[0])]["n_authorized_mock_write_with_gate"]
+            if c[0].endswith("authorized")
+            else rates[("B", c[0])]["n_unauthorized_mock_write_with_gate"]
+        ) / rates[("B", c[0])]["n_observed"]
+        for c in conds
+    ]
+
+    ax1.bar(x - w, a_vals, w, label="Track A (canary)", color="#94a3b8", edgecolor="#334155", linewidth=0.6)
+    ax1.bar(x, b_vals, w, label="Track B (no gate)", color="#dc2626", edgecolor="#7f1d1d", linewidth=0.6)
+    ax1.bar(x + w, g_vals, w, label="Track B (with gate)", color="#2563eb", edgecolor="#1e3a8a", linewidth=0.6)
+    ax1.axvline(5.5, color="#475569", linestyle="--", linewidth=0.9)
+    ax1.text(2.5, 103.5, "Unauthorized (target: 0%)", ha="center", va="bottom", fontsize=8.5, color="#991b1b", fontweight="bold")
+    ax1.text(6.5, 103.5, "Authorized", ha="center", va="bottom", fontsize=8.5, color="#1e40af", fontweight="bold")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([c[1] for c in conds], fontsize=7.8)
+    ax1.set_ylabel("Event / write rate (%)", fontsize=9)
+    ax1.set_ylim(0, 114)
+    ax1.grid(axis="y", linestyle=":", alpha=0.5)
+    ax1.set_axisbelow(True)
+    ax1.set_title("(a) Holdout rates by condition (qwen3-vl:4b-instruct)", fontsize=9.5, fontweight="bold", pad=26)
+    ax1.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=3, fontsize=7.6, frameon=False, handlelength=1.4, columnspacing=1.0)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+
+    # Panel (b): Paired causal contrasts with 95% cluster bootstrap CIs
+    contrast_defs = [
+        ("Primary image\n(claim - neutral)", "primary_image_claim_effect"),
+        ("Transcript claim\n(claim - neutral)", "exploratory_transcript_claim_effect"),
+        ("Modality interaction\n(image - text)", "exploratory_modality_interaction"),
+        ("Scope control\n(exact - other)", "exploratory_scope_control_effect"),
+    ]
+    y_pos = np.arange(len(contrast_defs))[::-1]
+    offsets = {"A": 0.14, "B": -0.14}
+    colors = {"A": "#475569", "B": "#dc2626"}
+    markers = {"A": "s", "B": "o"}
+    labels_leg = {"A": "Track A (canary)", "B": "Track B (tool call)"}
+
+    ax2.axvline(0.0, color="#0f172a", linestyle="--", linewidth=0.9)
+    for tr in ("A", "B"):
+        ests, lo_err, hi_err, ys = [], [], [], []
+        for idx, (_, key) in enumerate(contrast_defs):
+            obj = rep["tracks"][tr][key]
+            est = obj["estimate_pp"]
+            ci = obj["cluster_percentile_ci_95_pp"]
+            ests.append(est)
+            lo_err.append(est - ci[0])
+            hi_err.append(ci[1] - est)
+            ys.append(y_pos[idx] + offsets[tr])
+        ax2.errorbar(
+            ests, ys, xerr=[lo_err, hi_err],
+            fmt=markers[tr], color=colors[tr], ecolor=colors[tr],
+            elinewidth=1.4, capsize=3, markersize=5.5, label=labels_leg[tr],
+        )
+        for est, yv in zip(ests, ys):
+            va = "bottom" if tr == "A" else "top"
+            dy = 0.08 if tr == "A" else -0.09
+            ax2.text(est, yv + dy, f"{est:+.1f}", ha="center", va=va, fontsize=7.6, color=colors[tr], fontweight="bold")
+
+    ax2.set_yticks(y_pos)
+    ax2.set_yticklabels([c[0] for c in contrast_defs], fontsize=8)
+    ax2.set_xlabel("Paired risk difference (pp, 95% cluster CI)", fontsize=8.5)
+    ax2.set_xlim(-72, 102)
+    ax2.set_ylim(-0.65, len(contrast_defs) - 0.3)
+    ax2.grid(axis="x", linestyle=":", alpha=0.5)
+    ax2.set_axisbelow(True)
+    ax2.set_title("(b) Paired contrasts (n = 120, 24 families)", fontsize=9.5, fontweight="bold", pad=26)
+    ax2.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=2, fontsize=7.6, frameon=False, handlelength=1.4, columnspacing=1.2)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+
+    plt.tight_layout()
+    FIG.mkdir(parents=True, exist_ok=True)
+    out = FIG / "fig_results.png"
+    fig.savefig(out, dpi=300)
+    plt.close(fig)
+    return out
 
 
 if __name__ == "__main__":
     print(fig_pairs())
     for p in fig_design():
         print(p)
+    r = fig_results()
+    if r is not None:
+        print(r)
