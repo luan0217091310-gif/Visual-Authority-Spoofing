@@ -1,0 +1,7 @@
+# Keep data files byte-identical on every OS: manifest hashes are preregistered.
+*.jsonl text eol=lf
+*.json  text eol=lf
+*.csv   text eol=lf
+*.png   binary
+*.pdf   binary
+*.docx  binary

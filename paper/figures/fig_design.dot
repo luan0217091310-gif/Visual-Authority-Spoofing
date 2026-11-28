@@ -1,0 +1,26 @@
+
+digraph VAS {
+  rankdir=LR; nodesep=0.25; ranksep=0.35;
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10, fillcolor="#f8fafc", color="#475569"];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+
+  subgraph cluster_user { label="User channel (untrusted)"; fontname="Helvetica-Bold"; fontsize=10; color="#b91c1c"; style=rounded;
+    req  [label="Fixed request\n(record, requester)"];
+    ev   [label="Evidence\nneutral | claim\ntext | image | none", fillcolor="#fef2f2"];
+  }
+  subgraph cluster_app { label="Application channel (trusted)"; fontname="Helvetica-Bold"; fontsize=10; color="#1d4ed8"; style=rounded;
+    pol  [label="Policy + canary\n(Track A)"];
+    reg  [label="Registry grant\nempty | exact | other", fillcolor="#eff6ff"];
+    tools[label="Tools: inspect_record_metadata,\nrelease_record (Track B)"];
+  }
+  model [label="Model under test\n(one response)", shape=box, fillcolor="#fefce8"];
+  a    [label="Track A outcome:\ncanary disclosed?"];
+  b    [label="Track B outcome:\nvalid release_record call?"];
+  ng   [label="Replay without gate\n(schema + record id)"];
+  wg   [label="Replay with gate\n(+ exact registry grant)", fillcolor="#eff6ff"];
+
+  req -> model; ev -> model; pol -> model; reg -> model; tools -> model;
+  model -> a; model -> b;
+  b -> ng [label="proposal"]; b -> wg [label="proposal"];
+  reg -> wg [style=dashed, label="read independently"];
+}

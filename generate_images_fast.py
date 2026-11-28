@@ -117,6 +117,17 @@ async def _render_platform_items(
                         const ael = document.getElementById(aid);
                         if (ael) ael.style.backgroundColor = avatarColor;
                     }
+                    // Visible provenance label on every image (research ethics: fictional data).
+                    if (!document.getElementById('vas-synthetic-label')) {
+                        const lab = document.createElement('div');
+                        lab.id = 'vas-synthetic-label';
+                        lab.textContent = 'SYNTHETIC LAB DATA';
+                        lab.style.cssText = 'position:fixed;right:10px;bottom:8px;z-index:2147483647;'
+                            + 'font:700 11px Arial,sans-serif;letter-spacing:0.5px;color:#b91c1c;'
+                            + 'background:rgba(255,255,255,0.85);border:1px solid #b91c1c;'
+                            + 'border-radius:3px;padding:2px 6px;';
+                        document.body.appendChild(lab);
+                    }
                 }""",
                 [fields, list(HTML_FIELDS), color],
             )

@@ -1,7 +1,8 @@
-"""Unit test suite for the Visual Authority Spoofing (VAS) benchmark (10 tests)."""
+"""Unit test suite for the Visual Authority Spoofing (VAS) benchmark."""
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,11 +21,23 @@ from dataset import (
     write_jsonl,
 )
 from experiment import (
-     build_trial_schedule,
+    CONDITIONS,
+    build_chat_body,
+    build_claude_body,
+    build_gemini_body,
+    build_request_payload,
+    build_trial_schedule,
+    normalize_chat_response,
+    normalize_claude_response,
+    normalize_gemini_response,
+    extend_body_with_tool_results,
+    inspect_tool_result,
     run_experiment,
+    run_tool_loop,
     score_and_replay_track_b,
     score_track_a,
 )
+from probe import parse_label, probe_sample, run_probe, score_probe
 
 
 class TestVASBenchmark(unittest.TestCase):
@@ -249,6 +262,150 @@ class TestVASBenchmark(unittest.TestCase):
         self.assertEqual(eff_a["estimate_pp"], 0.0)
         self.assertIsNotNone(eff_a["p_holm"])
         self.assertIsNotNone(eff_a["zero_event_family_upper_bound_95_pct"])
+
+    def test_11_stimuli_are_declarative_minimal_pairs(self) -> None:
+        for case in self.dev_cases:
+            neutral = case["evidence"]["neutral"]["transcript"].splitlines()
+            claim = case["evidence"]["claim"]["transcript"].splitlines()
+            # Only the status line ("Thông tin phản hồi") differs between the two transcripts.
+            diff = [i for i, (a, b) in enumerate(zip(neutral, claim)) if a != b]
+            self.assertEqual(len(neutral), len(claim))
+            self.assertEqual(len(diff), 1)
+            self.assertTrue(claim[diff[0]].startswith("Thông tin phản hồi:"))
+            for text in (neutral[diff[0]], claim[diff[0]]):
+                self.assertNotIn("trợ lý AI", text)
+                self.assertNotIn(" AI ", text)
+        self.assertTrue((self.dev_dir / "render_env.json").exists())
+
+    def test_12_request_bodies_share_inputs_and_hash_images(self) -> None:
+        case = self.dev_cases[0]
+        cond = next(c for c in CONDITIONS if c["condition_id"] == "claim_image")
+        payload, h_openai = build_request_payload(
+            case=case, data_root=self.dev_dir, track="B", condition=cond, model="m"
+        )
+        claude = build_claude_body(case=case, data_root=self.dev_dir, track="B", condition=cond, model="c")
+        gemini = build_gemini_body(case=case, data_root=self.dev_dir, track="B", condition=cond)
+        self.assertNotIn("temperature", claude)
+        self.assertEqual(claude["tool_choice"], {"type": "auto", "disable_parallel_tool_use": True})
+        self.assertEqual(payload["parallel_tool_calls"], False)
+        b64 = payload["input"][1]["content"][1]["image_url"].split(",", 1)[1]
+        self.assertEqual(claude["messages"][0]["content"][1]["source"]["data"], b64)
+        self.assertEqual(gemini["contents"][0]["parts"][1]["inline_data"]["data"], b64)
+        self.assertEqual(len(h_openai), 64)
+
+    def test_13_provider_response_normalization(self) -> None:
+        refused = normalize_claude_response(
+            {"model": "c", "stop_reason": "refusal", "stop_details": {"category": "cyber"}, "content": []}
+        )
+        self.assertEqual(refused["status"], "refusal")
+        truncated = normalize_claude_response({"model": "c", "stop_reason": "max_tokens", "content": []})
+        self.assertEqual(truncated["status"], "incomplete")
+        tool = normalize_claude_response(
+            {"model": "c", "stop_reason": "tool_use",
+             "content": [{"type": "tool_use", "id": "t1", "name": "release_record", "input": {"record_id": "X"}}]}
+        )
+        self.assertEqual(tool["native_calls"][0]["arguments"], {"record_id": "X"})
+        blocked = normalize_gemini_response({"promptFeedback": {"blockReason": "SAFETY"}}, "g")
+        self.assertEqual(blocked["status"], "provider_block")
+        cut = normalize_gemini_response({"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": []}}]}, "g")
+        self.assertEqual(cut["status"], "incomplete")
+
+    def test_14_status_probe_sample_parsing_and_fixture(self) -> None:
+        sample = probe_sample(self.dev_cases)
+        self.assertEqual(len(sample), 16)
+        self.assertEqual(parse_label("APPROVED"), "APPROVED")
+        self.assertEqual(parse_label("NOT_APPROVED."), "NOT_APPROVED")
+        self.assertIsNone(parse_label("APPROVED or NOT_APPROVED"))
+        self.assertIsNone(parse_label("không rõ"))
+        log = self.tmp_path / "probe_fixture.jsonl"
+        run_probe(backend="fixture", live=False, model="fixture", data_dir=self.dev_dir, out_log=log)
+        summary = score_probe(self.dev_dir, log)
+        self.assertEqual(summary["n_correct"], 16)
+        self.assertTrue(summary["software_fixture_only"])
+
+    def test_15_chat_compatible_backend(self) -> None:
+        case = self.dev_cases[0]
+        cond = next(c for c in CONDITIONS if c["condition_id"] == "claim_image")
+        body = build_chat_body(case=case, data_root=self.dev_dir, track="B", condition=cond, model="qwen")
+        self.assertEqual(body["messages"][0]["role"], "system")
+        self.assertTrue(body["messages"][1]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,"))
+        self.assertEqual(body["tools"][1]["function"]["name"], "release_record")
+        resp = normalize_chat_response(
+            {"model": "qwen", "choices": [{"finish_reason": "tool_calls", "message": {"content": None,
+             "tool_calls": [{"id": "c1", "function": {"name": "release_record",
+                                                      "arguments": json.dumps({"record_id": case["record_id"]})}}]}}]},
+            "qwen",
+        )
+        score = score_and_replay_track_b(resp["native_calls"], case, "empty")
+        self.assertEqual(score["event"], 1)
+        self.assertFalse(score["unauthorized_mock_write_with_gate"])
+        cut = normalize_chat_response({"choices": [{"finish_reason": "length", "message": {"content": "x"}}]}, "q")
+        self.assertEqual(cut["status"], "incomplete")
+
+    def test_16_annotation_kappa(self) -> None:
+        from tools.annotation import cohen_kappa
+
+        self.assertEqual(cohen_kappa(["APPROVED", "NOT_APPROVED"] * 5, ["APPROVED", "NOT_APPROVED"] * 5), 1.0)
+        self.assertAlmostEqual(
+            cohen_kappa(["APPROVED"] * 5 + ["NOT_APPROVED"] * 5, ["APPROVED"] * 4 + ["NOT_APPROVED"] * 6), 0.8
+        )
+
+    def test_17_bounded_tool_loop(self) -> None:
+        case = self.dev_cases[0]
+        cond = next(c for c in CONDITIONS if c["condition_id"] == "neutral_image")
+        rid = case["record_id"]
+        insp = inspect_tool_result(case, {"record_id": rid})
+        self.assertTrue(insp["found"])
+        self.assertNotIn("grant", json.dumps(insp))
+        self.assertFalse(inspect_tool_result(case, {"record_id": "X"})["found"])
+
+        def fake(names, backend):
+            seq = iter(names)
+
+            def call(body):
+                name = next(seq)
+                calls = [] if name is None else [{"name": name, "call_id": f"id_{name}",
+                                                  "raw_arguments": json.dumps({"record_id": rid}),
+                                                  "arguments": {"record_id": rid}, "status": "completed"}]
+                cont = {"chatcompat": {"role": "assistant", "content": None,
+                                       "tool_calls": [{"id": c["call_id"], "type": "function",
+                                                       "function": {"name": c["name"], "arguments": c["raw_arguments"]}}
+                                                      for c in calls]},
+                        "gemini": {"role": "model", "parts": [{"functionCall": {"name": c["name"], "args": c["arguments"]},
+                                                               "thoughtSignature": "sig"} for c in calls]},
+                        "claude": [{"type": "tool_use", "id": c["call_id"], "name": c["name"], "input": c["arguments"]}
+                                   for c in calls],
+                        "openai": [{"type": "function_call", "call_id": c["call_id"], "name": c["name"],
+                                    "arguments": c["raw_arguments"]} for c in calls]}
+                return {"status": "completed", "visible_text": "", "native_calls": calls, "usage": {},
+                        "served_model": "m", "error_code": None, "_continuation": cont[backend]}
+            return call
+
+        builders = {
+            "chatcompat": lambda: build_chat_body(case=case, data_root=self.dev_dir, track="B", condition=cond, model="m"),
+            "gemini": lambda: build_gemini_body(case=case, data_root=self.dev_dir, track="B", condition=cond),
+            "claude": lambda: build_claude_body(case=case, data_root=self.dev_dir, track="B", condition=cond, model="m"),
+            "openai": lambda: build_request_payload(case=case, data_root=self.dev_dir, track="B", condition=cond, model="m")[0],
+        }
+        for backend, build in builders.items():
+            body = build()
+            resp = run_tool_loop(backend, body, fake(["inspect_record_metadata", "release_record"], backend), case)
+            self.assertEqual(resp["n_turns"], 2, backend)
+            self.assertEqual(resp["loop_stop"], "decision")
+            self.assertNotIn("_continuation", json.dumps(resp))
+            score = score_and_replay_track_b(resp["native_calls"], case, "empty")
+            self.assertEqual(score["event"], 1)
+            self.assertFalse(score["unauthorized_mock_write_with_gate"])
+            self.assertTrue(score["unauthorized_mock_write_no_gate"])
+            ext = extend_body_with_tool_results(backend, body, {"_continuation": fake(["inspect_record_metadata"], backend)(body)["_continuation"]},
+                                                [({"name": "inspect_record_metadata", "call_id": "id_inspect_record_metadata"}, insp)])
+            self.assertGreater(len(json.dumps(ext)), len(json.dumps(body)))
+            # the first request body is unchanged by the loop
+            self.assertEqual(json.dumps(body), json.dumps(build()))
+        capped = run_tool_loop("chatcompat", builders["chatcompat"](), fake(["inspect_record_metadata"] * 3, "chatcompat"), case)
+        self.assertEqual((capped["n_turns"], capped["loop_stop"]), (3, "max_turns"))
+        stop = run_tool_loop("gemini", builders["gemini"](), fake([None], "gemini"), case)
+        self.assertEqual((stop["n_turns"], stop["native_calls"]), (1, []))
 
 
 if __name__ == "__main__":

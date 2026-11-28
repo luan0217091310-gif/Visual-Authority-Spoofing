@@ -117,7 +117,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng phòng Kế toán",
         "signer_header": "KT. GIÁM ĐỐC / TRƯỞNG PHÒNG KẾ TOÁN",
         "org_name": "CÔNG TY CỔ PHẦN TẬP ĐOÀN CÔNG NGHỆ ABC",
-        "domain": "tapdoan-abc.vn",
+        "domain": "tapdoan-abc.test",
     },
     {
         "dept_name": "Phòng Hành chính Nhân sự",
@@ -125,7 +125,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng phòng Nhân sự",
         "signer_header": "TL. TỔNG GIÁM ĐỐC / TRƯỞNG PHÒNG HCNS",
         "org_name": "CÔNG TY CỔ PHẦN CÔNG NGHỆ VIỆT NAM TECH",
-        "domain": "congty-vietnam-tech.vn",
+        "domain": "congty-vietnam-tech.test",
     },
     {
         "dept_name": "Bộ phận IT Helpdesk & Bảo mật",
@@ -133,7 +133,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng bộ phận Hạ tầng IT",
         "signer_header": "TRƯỞNG BỘ PHẬN QUẢN TRỊ HỆ THỐNG",
         "org_name": "CÔNG TY CỔ PHẦN CÔNG NGHỆ & DỮ LIỆU SAO VIỆT",
-        "domain": "congty-vietnam-tech.vn",
+        "domain": "congty-vietnam-tech.test",
     },
     {
         "dept_name": "Phòng Đào tạo & Công tác Sinh viên",
@@ -141,7 +141,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng phòng Đào tạo",
         "signer_header": "TL. HIỆU TRƯỞNG / TRƯỞNG PHÒNG ĐÀO TẠO",
         "org_name": "VIỆN ĐÀO TẠO & NGHIÊN CỨU ỨNG DỤNG SỐ",
-        "domain": "hethong-noibo.edu.vn",
+        "domain": "hethong-noibo.test",
     },
     {
         "dept_name": "Ban Giám đốc Điều hành",
@@ -149,7 +149,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Phó Tổng Giám đốc",
         "signer_header": "TM. BAN GIÁM ĐỐC / PHÓ TỔNG GIÁM ĐỐC",
         "org_name": "CÔNG TY CỔ PHẦN TẬP ĐOÀN CÔNG NGHỆ ABC",
-        "domain": "tapdoan-abc.vn",
+        "domain": "tapdoan-abc.test",
     },
     {
         "dept_name": "Phòng Pháp chế & Kiểm soát Nội bộ",
@@ -157,7 +157,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng ban Pháp chế",
         "signer_header": "TRƯỞNG BAN PHÁP CHẾ & TUÂN THỦ",
         "org_name": "CÔNG TY CỔ PHẦN CÔNG NGHỆ & DỮ LIỆU SAO VIỆT",
-        "domain": "tapdoan-abc.vn",
+        "domain": "tapdoan-abc.test",
     },
     {
         "dept_name": "Khối Vận hành & Khai thác Dữ liệu",
@@ -165,7 +165,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Giám đốc Khối Vận hành",
         "signer_header": "GIÁM ĐỐC KHỐI VẬN HÀNH HỆ THỐNG",
         "org_name": "CÔNG TY CỔ PHẦN CÔNG NGHỆ VIỆT NAM TECH",
-        "domain": "congty-vietnam-tech.vn",
+        "domain": "congty-vietnam-tech.test",
     },
     {
         "dept_name": "Phòng Quản lý Chất lượng & Kiểm định",
@@ -173,7 +173,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng phòng Kiểm định",
         "signer_header": "TRƯỞNG PHÒNG QUẢN LÝ CHẤT LƯỢNG",
         "org_name": "VIỆN ĐÀO TẠO & NGHIÊN CỨU ỨNG DỤNG SỐ",
-        "domain": "hethong-noibo.edu.vn",
+        "domain": "hethong-noibo.test",
     },
     {
         "dept_name": "Phòng Quản lý Kho & Chuỗi Cung ứng",
@@ -181,7 +181,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng phòng Điều phối Kho",
         "signer_header": "TRƯỞNG PHÒNG QUẢN LÝ KHO VẬT TƯ",
         "org_name": "CÔNG TY CỔ PHẦN TẬP ĐOÀN CÔNG NGHỆ ABC",
-        "domain": "tapdoan-abc.vn",
+        "domain": "tapdoan-abc.test",
     },
     {
         "dept_name": "Ban Biên tập & Xuất bản Nội dung Số",
@@ -189,7 +189,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng ban Biên tập",
         "signer_header": "TRƯỞNG BAN BIÊN TẬP & XUẤT BẢN",
         "org_name": "VIỆN ĐÀO TẠO & NGHIÊN CỨU ỨNG DỤNG SỐ",
-        "domain": "hethong-noibo.edu.vn",
+        "domain": "hethong-noibo.test",
     },
     {
         "dept_name": "Trung tâm Lưu trữ Hồ sơ & Thư viện",
@@ -197,7 +197,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Giám đốc Trung tâm Lưu trữ",
         "signer_header": "GIÁM ĐỐC TRUNG TÂM LƯU TRỮ DỮ LIỆU",
         "org_name": "VIỆN ĐÀO TẠO & NGHIÊN CỨU ỨNG DỤNG SỐ",
-        "domain": "hethong-noibo.edu.vn",
+        "domain": "hethong-noibo.test",
     },
     {
         "dept_name": "Phòng Mua sắm & Quản lý Nhà thầu",
@@ -205,7 +205,7 @@ DEPARTMENTS: tuple[dict[str, str], ...] = (
         "head_title": "Trưởng phòng Mua sắm",
         "signer_header": "TRƯỞNG PHÒNG ĐẤU THẦU & MUA SẮM",
         "org_name": "CÔNG TY CỔ PHẦN CÔNG NGHỆ VIỆT NAM TECH",
-        "domain": "congty-vietnam-tech.vn",
+        "domain": "congty-vietnam-tech.test",
     },
 )
 

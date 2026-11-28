@@ -27,9 +27,37 @@ from dataset import digest_bytes, digest_file, generate_dataset, json_line, read
 
 BASE_SEED = 20261109
 DEFAULT_MODEL = "gpt-4.1-mini-2025-04-14"
+# Default model per backend. Gemini has no default: pass --model explicitly so the
+# snapshot under test is always a deliberate, recorded choice.
+DEFAULT_MODELS: dict[str, str | None] = {
+    "fixture": "fixture-deterministic-v0.1",
+    "openai": DEFAULT_MODEL,
+    "claude": "claude-opus-5-5",
+    "gemini": None,
+    "chatcompat": None,
+}
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+# 512 for every backend: dev pilots showed small and fast models (Qwen3-VL 4B, Gemini 3.1
+# Flash-Lite) giving Track A replies longer than 192 tokens (runs/pilot/).
+MAX_OUTPUT_TOKENS = 512
+# Current Claude models always think before answering, and thinking tokens count toward
+# max_tokens, so 192 tokens would truncate most replies. The Claude adapter therefore uses
+# a larger cap and low effort; this is a documented adapter difference, not a protocol change.
+CLAUDE_MAX_TOKENS = 2048
+CLAUDE_EFFORT = "low"
+CHAT_MAX_TOKENS = MAX_OUTPUT_TOKENS  # chat-compatible adapter also fixes the sampling seed
 
 MEASURED = {"completed", "refusal", "provider_block"}
+# Track B is a bounded agent loop: a read-only inspect_record_metadata call is answered with a
+# fixed, condition-independent metadata object and the model may act again, for at most
+# MAX_AGENT_TURNS model responses. The loop ends at the first response that calls no tool, calls
+# release_record, or calls an unknown tool. (Dev v0.2 showed that a single-turn harness stops
+# most trials at the read-only lookup, before the model decides on release_record.)
+MAX_AGENT_TURNS = 3
+INSPECT_TOOL = "inspect_record_metadata"
+MAX_ATTEMPTS = 2  # first attempt + at most one retry of a non-measured trial (preregistration, section 4)
 
 CONDITIONS: tuple[dict[str, str], ...] = (
     {
@@ -122,6 +150,45 @@ TRACK_B_TOOLS: list[dict[str, Any]] = [
 ]
 
 
+def load_dotenv(path: Path | None = None) -> list[str]:
+    """Load KEY=VALUE lines from the repository's .env (git-ignored) without overriding
+    variables already set. Returns the names that were loaded; values are never printed."""
+    env_path = path or Path(__file__).resolve().parent / ".env"
+    loaded: list[str] = []
+    if not env_path.exists():
+        return loaded
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
+
+
+RETRYABLE_ERRORS = {"HTTP_429", "HTTP_500", "HTTP_502", "HTTP_503", "HTTP_504", "TimeoutError", "URLError"}
+
+
+def call_with_backoff(call, retries: int = 5, base: float = 10.0, cap: float = 180.0) -> dict[str, Any]:
+    """Run ``call()`` and retry transient transport errors (rate limits, overload, timeouts).
+
+    The request body is identical on every attempt; only waiting is added. The number of
+    extra attempts is stored in the response as ``transport_retries``.
+    """
+    resp: dict[str, Any] = {}
+    for attempt in range(retries + 1):
+        resp = call()
+        if resp.get("status") != "transport_error" or resp.get("error_code") not in RETRYABLE_ERRORS:
+            break
+        if attempt < retries:
+            time.sleep(min(cap, base * (2 ** attempt)))
+    resp["transport_retries"] = attempt
+    return resp
+
+
 def now() -> str:
     """Return current UTC timestamp in ISO-8601 format."""
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -182,6 +249,46 @@ def build_system_instructions(case: dict[str, Any], track: str, grants: list[dic
     raise ValueError(f"Unsupported track: {track}")
 
 
+def _evidence_items(
+    case: dict[str, Any], data_root: Path, evidence_mode: str
+) -> list[tuple[str, str]]:
+    """Return the attached evidence as provider-neutral ("text", str) / ("image", b64) items.
+
+    Image bytes are checked against the manifest hash for every backend, so a modified
+    stimulus can never be sent silently.
+    """
+    if evidence_mode in ("neutral_text", "claim_text"):
+        variant = "neutral" if evidence_mode == "neutral_text" else "claim"
+        transcript = case["evidence"][variant]["transcript"]
+        return [("text", f"Bản chép nội dung tài liệu đính kèm:\n{transcript}")]
+    if evidence_mode in ("neutral_image", "claim_image"):
+        variant = "neutral" if evidence_mode == "neutral_image" else "claim"
+        asset = case["evidence"][variant]
+        img_path = data_root / asset["image"]
+        if digest_file(img_path) != asset["sha256"]:
+            raise ValueError(f"Image hash mismatch for {img_path}")
+        return [("image", base64.b64encode(img_path.read_bytes()).decode("ascii"))]
+    if evidence_mode == "none":
+        return [("text", "Không có tài liệu hay hình ảnh đính kèm.")]
+    raise ValueError(f"Unsupported evidence_mode: {evidence_mode}")
+
+
+def _trial_inputs(
+    case: dict[str, Any], data_root: Path, track: str, condition: dict[str, str]
+) -> tuple[str, str, list[tuple[str, str]]]:
+    """Return (system_text, request_text, evidence_items) shared by all backends."""
+    grants = build_registry_grants(case, track, condition["grant_state"])
+    system_text = build_system_instructions(case, track, grants)
+    user_request = case["request_a"] if track == "A" else case["request_b"]
+    items = _evidence_items(case, data_root, condition["evidence_mode"])
+    return system_text, f"Yêu cầu xử lý: {user_request}", items
+
+
+def body_sha256(body: dict[str, Any]) -> str:
+    """SHA-256 of the canonical JSON of the exact request body sent to a provider."""
+    return digest_bytes(json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+
+
 def build_request_payload(
     *,
     case: dict[str, Any],
@@ -191,52 +298,21 @@ def build_request_payload(
     model: str,
 ) -> tuple[dict[str, Any], str]:
     """Build the OpenAI Responses API payload and return (payload, input_sha256)."""
-    grant_state = condition["grant_state"]
-    evidence_mode = condition["evidence_mode"]
-    grants = build_registry_grants(case, track, grant_state)
-    system_text = build_system_instructions(case, track, grants)
-    user_request = case["request_a"] if track == "A" else case["request_b"]
-
-    user_content: list[dict[str, Any]] = [
-        {"type": "input_text", "text": f"Yêu cầu xử lý: {user_request}"}
-    ]
-
-    if evidence_mode in ("neutral_text", "claim_text"):
-        variant = "neutral" if evidence_mode == "neutral_text" else "claim"
-        transcript = case["evidence"][variant]["transcript"]
-        user_content.append(
-            {
-                "type": "input_text",
-                "text": f"Bản chép nội dung tài liệu đính kèm:\n{transcript}",
-            }
-        )
-    elif evidence_mode in ("neutral_image", "claim_image"):
-        variant = "neutral" if evidence_mode == "neutral_image" else "claim"
-        asset = case["evidence"][variant]
-        img_path = data_root / asset["image"]
-        actual_hash = digest_file(img_path)
-        if actual_hash != asset["sha256"]:
-            raise ValueError(f"Image hash mismatch for {img_path}")
-        b64 = base64.b64encode(img_path.read_bytes()).decode("ascii")
-        user_content.append(
-            {
-                "type": "input_image",
-                "image_url": f"data:image/png;base64,{b64}",
-                "detail": "high",
-            }
-        )
-    elif evidence_mode == "none":
-        user_content.append(
-            {"type": "input_text", "text": "Không có tài liệu hay hình ảnh đính kèm."}
-        )
-    else:
-        raise ValueError(f"Unsupported evidence_mode: {evidence_mode}")
+    system_text, request_text, items = _trial_inputs(case, data_root, track, condition)
+    user_content: list[dict[str, Any]] = [{"type": "input_text", "text": request_text}]
+    for kind, value in items:
+        if kind == "text":
+            user_content.append({"type": "input_text", "text": value})
+        else:
+            user_content.append(
+                {"type": "input_image", "image_url": f"data:image/png;base64,{value}", "detail": "high"}
+            )
 
     payload: dict[str, Any] = {
         "model": model,
         "store": False,
         "temperature": 0,
-        "max_output_tokens": 192,
+        "max_output_tokens": MAX_OUTPUT_TOKENS,
         "input": [
             {"role": "developer", "content": [{"type": "input_text", "text": system_text}]},
             {"role": "user", "content": user_content},
@@ -246,47 +322,27 @@ def build_request_payload(
         payload["tools"] = TRACK_B_TOOLS
         payload["tool_choice"] = "auto"
         payload["parallel_tool_calls"] = False
-
-    canonical_bytes = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return payload, digest_bytes(canonical_bytes)
+    return payload, body_sha256(payload)
 
 
-def gemini_api(
-    *,
-    case: dict[str, Any],
-    data_root: Path,
-    track: str,
-    condition: dict[str, str],
-    model: str,
-    api_key: str,
-    timeout: int = 90,
+def build_gemini_body(
+    *, case: dict[str, Any], data_root: Path, track: str, condition: dict[str, str]
 ) -> dict[str, Any]:
-    """Call the Google Gemini GenerateContent API for multimodal & tool-calling evaluation."""
-    grant_state = condition["grant_state"]
-    evidence_mode = condition["evidence_mode"]
-    grants = build_registry_grants(case, track, grant_state)
-    system_text = build_system_instructions(case, track, grants)
-    user_request = case["request_a"] if track == "A" else case["request_b"]
-
-    parts: list[dict[str, Any]] = [{"text": f"Yêu cầu xử lý: {user_request}"}]
-    if evidence_mode in ("neutral_text", "claim_text"):
-        variant = "neutral" if evidence_mode == "neutral_text" else "claim"
-        parts.append({"text": f"Bản chép nội dung tài liệu đính kèm:\n{case['evidence'][variant]['transcript']}"})
-    elif evidence_mode in ("neutral_image", "claim_image"):
-        variant = "neutral" if evidence_mode == "neutral_image" else "claim"
-        img_path = data_root / case["evidence"][variant]["image"]
-        b64 = base64.b64encode(img_path.read_bytes()).decode("ascii")
-        parts.append({"inline_data": {"mime_type": "image/png", "data": b64}})
-    else:
-        parts.append({"text": "Không có tài liệu hay hình ảnh đính kèm."})
-
-    gem_body: dict[str, Any] = {
+    """Build the Gemini generateContent request body for one trial."""
+    system_text, request_text, items = _trial_inputs(case, data_root, track, condition)
+    parts: list[dict[str, Any]] = [{"text": request_text}]
+    for kind, value in items:
+        if kind == "text":
+            parts.append({"text": value})
+        else:
+            parts.append({"inline_data": {"mime_type": "image/png", "data": value}})
+    body: dict[str, Any] = {
         "system_instruction": {"parts": [{"text": system_text}]},
         "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 192},
+        "generationConfig": {"temperature": 0.0, "maxOutputTokens": MAX_OUTPUT_TOKENS},
     }
     if track == "B":
-        gem_body["tools"] = [
+        body["tools"] = [
             {
                 "functionDeclarations": [
                     {
@@ -304,42 +360,201 @@ def gemini_api(
                 ]
             }
         ]
+        body["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO"}}
+    return body
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+def build_claude_body(
+    *, case: dict[str, Any], data_root: Path, track: str, condition: dict[str, str], model: str
+) -> dict[str, Any]:
+    """Build the Anthropic Messages API request body for one trial.
+
+    Sampling parameters are omitted: current Claude models reject temperature/top_p/top_k.
+    No server-side refusal fallback is requested, because a fallback would let another
+    model answer and mix two snapshots in one log.
+    """
+    system_text, request_text, items = _trial_inputs(case, data_root, track, condition)
+    content: list[dict[str, Any]] = [{"type": "text", "text": request_text}]
+    for kind, value in items:
+        if kind == "text":
+            content.append({"type": "text", "text": value})
+        else:
+            content.append(
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": value}}
+            )
+    body: dict[str, Any] = {
+        "model": model,
+        "max_tokens": CLAUDE_MAX_TOKENS,
+        "output_config": {"effort": CLAUDE_EFFORT},
+        "system": system_text,
+        "messages": [{"role": "user", "content": content}],
+    }
+    if track == "B":
+        body["tools"] = [
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "input_schema": t["parameters"],
+                "strict": True,
+            }
+            for t in TRACK_B_TOOLS
+        ]
+        body["tool_choice"] = {"type": "auto", "disable_parallel_tool_use": True}
+    return body
+
+
+def _transport_error(code: str, detail: str) -> dict[str, Any]:
+    return {
+        "status": "transport_error",
+        "error_code": code,
+        "error_detail": detail[:500],
+        "served_model": None,
+        "visible_text": "",
+        "native_calls": [],
+        "usage": None,
+    }
+
+
+def _post_json(url: str, body: dict[str, Any], headers: dict[str, str], timeout: int) -> dict[str, Any]:
+    """POST a JSON body. Returns {"data": ...} or {"error": <normalized transport_error>}."""
     req = urllib.request.Request(
         url,
-        data=json.dumps(gem_body, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json", **headers},
         method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            return {"data": json.loads(resp.read().decode("utf-8"))}
     except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else str(exc)
-        return {
-            "status": "transport_error",
-            "error_code": f"HTTP_{exc.code}",
-            "error_detail": err_body[:500],
-            "served_model": None,
-            "visible_text": "",
-            "native_calls": [],
-            "usage": None,
-        }
-    except Exception as exc:
-        return {
-            "status": "transport_error",
-            "error_code": type(exc).__name__,
-            "error_detail": str(exc)[:500],
-            "served_model": None,
-            "visible_text": "",
-            "native_calls": [],
-            "usage": None,
-        }
+        try:
+            err_body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            err_body = str(exc)
+        return {"error": _transport_error(f"HTTP_{exc.code}", err_body)}
+    except Exception as exc:  # network errors, timeouts, invalid JSON
+        return {"error": _transport_error(type(exc).__name__, str(exc))}
 
+
+def build_chat_body(
+    *, case: dict[str, Any], data_root: Path, track: str, condition: dict[str, str], model: str
+) -> dict[str, Any]:
+    """Build an OpenAI-compatible Chat Completions body (vLLM, Ollama, LM Studio, ...).
+
+    Used for open-weight vision-language models served locally. The system prompt travels
+    in the system role, the request and evidence in the user turn, as in the other adapters.
+    """
+    system_text, request_text, items = _trial_inputs(case, data_root, track, condition)
+    content: list[dict[str, Any]] = [{"type": "text", "text": request_text}]
+    for kind, value in items:
+        if kind == "text":
+            content.append({"type": "text", "text": value})
+        else:
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{value}"}})
+    body: dict[str, Any] = {
+        "model": model,
+        "temperature": 0,
+        "seed": BASE_SEED,
+        "max_tokens": CHAT_MAX_TOKENS,
+        "messages": [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": content},
+        ],
+    }
+    if track == "B":
+        body["tools"] = [
+            {"type": "function", "function": {
+                "name": t["name"], "description": t["description"], "parameters": t["parameters"]}}
+            for t in TRACK_B_TOOLS
+        ]
+        body["tool_choice"] = "auto"
+        body["parallel_tool_calls"] = False
+    return body
+
+
+def normalize_chat_response(data: dict[str, Any], model: str) -> dict[str, Any]:
+    """Map a Chat Completions response to the common log schema."""
+    choice = (data.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    native_calls: list[dict[str, Any]] = []
+    for call in message.get("tool_calls") or []:
+        fn = call.get("function") or {}
+        raw_args = fn.get("arguments", "")
+        parsed: dict[str, Any] | None = None
+        if isinstance(raw_args, dict):
+            parsed = raw_args
+        elif isinstance(raw_args, str):
+            try:
+                cand = json.loads(raw_args)
+                parsed = cand if isinstance(cand, dict) else None
+            except json.JSONDecodeError:
+                parsed = None
+        native_calls.append({
+            "name": fn.get("name", ""),
+            "call_id": call.get("id", ""),
+            "raw_arguments": raw_args,
+            "arguments": parsed,
+            "status": "completed",
+        })
+    finish = choice.get("finish_reason")
+    if message.get("refusal"):
+        status = "refusal"
+    elif finish == "content_filter":
+        status = "provider_block"
+    elif finish == "length":
+        status = "incomplete"
+    else:
+        status = "completed"
+    text = message.get("content") or message.get("refusal") or ""
+    if isinstance(text, list):
+        text = "".join(part.get("text", "") for part in text if isinstance(part, dict))
+    return {
+        "status": status,
+        "error_code": None,
+        "error_detail": finish,
+        "served_model": data.get("model", model),
+        "visible_text": str(text).strip(),
+        "native_calls": native_calls,
+        "usage": data.get("usage"),
+        "_continuation": message,
+    }
+
+
+def chat_api(body: dict[str, Any], base_url: str, api_key: str | None, timeout: int = 300) -> dict[str, Any]:
+    """Call an OpenAI-compatible /chat/completions endpoint."""
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    result = _post_json(base_url.rstrip("/") + "/chat/completions", body, headers, timeout)
+    if "error" in result:
+        return result["error"]
+    return normalize_chat_response(result["data"], body["model"])
+
+
+GEMINI_BLOCK_REASONS = {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "RECITATION", "IMAGE_SAFETY"}
+
+
+def gemini_api(body: dict[str, Any], model: str, api_key: str, timeout: int = 90) -> dict[str, Any]:
+    """Call the Gemini generateContent API and normalize output fields.
+
+    The key travels in the x-goog-api-key header, never in the URL, so it cannot leak
+    into error messages or logs.
+    """
+    result = _post_json(
+        GEMINI_URL_TEMPLATE.format(model=model), body, {"x-goog-api-key": api_key}, timeout
+    )
+    if "error" in result:
+        return result["error"]
+    return normalize_gemini_response(result["data"], model)
+
+
+def normalize_gemini_response(data: dict[str, Any], model: str) -> dict[str, Any]:
+    """Map a Gemini response to the common log schema."""
+    block_reason = (data.get("promptFeedback") or {}).get("blockReason")
     visible_chunks: list[str] = []
     native_calls: list[dict[str, Any]] = []
+    finish_reasons: list[str] = []
     for cand in data.get("candidates", []) or []:
+        if cand.get("finishReason"):
+            finish_reasons.append(str(cand["finishReason"]))
         for part in (cand.get("content", {}) or {}).get("parts", []) or []:
             if "text" in part:
                 visible_chunks.append(part["text"])
@@ -349,108 +564,51 @@ def gemini_api(
                 native_calls.append(
                     {
                         "name": fc.get("name", ""),
-                        "call_id": f"gem_call_{len(native_calls)+1}",
+                        "call_id": f"gem_call_{len(native_calls) + 1}",
                         "raw_arguments": json.dumps(args, ensure_ascii=False),
                         "arguments": args,
                         "status": "completed",
                     }
                 )
+
+    if block_reason or any(r in GEMINI_BLOCK_REASONS for r in finish_reasons):
+        status = "provider_block"
+    elif "MAX_TOKENS" in finish_reasons:
+        status = "incomplete"
+    else:
+        status = "completed"
     return {
-        "status": "completed",
+        "status": status,
         "error_code": None,
-        "error_detail": None,
+        "error_detail": block_reason or (",".join(finish_reasons) or None),
         "served_model": data.get("modelVersion", model),
         "visible_text": "\n".join(visible_chunks).strip(),
         "native_calls": native_calls,
         "usage": data.get("usageMetadata"),
+        # model turn returned verbatim (keeps Gemini thought signatures for function calls)
+        "_continuation": ((data.get("candidates") or [{}])[0].get("content") or {"role": "model", "parts": []}),
     }
 
 
-def claude_api(
-    *,
-    case: dict[str, Any],
-    data_root: Path,
-    track: str,
-    condition: dict[str, str],
-    model: str,
-    api_key: str,
-    timeout: int = 90,
-) -> dict[str, Any]:
-    """Call the Anthropic Messages API for multimodal & tool-calling evaluation."""
-    grant_state = condition["grant_state"]
-    evidence_mode = condition["evidence_mode"]
-    grants = build_registry_grants(case, track, grant_state)
-    system_text = build_system_instructions(case, track, grants)
-    user_request = case["request_a"] if track == "A" else case["request_b"]
-
-    content_blocks: list[dict[str, Any]] = [{"type": "text", "text": f"Yêu cầu xử lý: {user_request}"}]
-    if evidence_mode in ("neutral_text", "claim_text"):
-        variant = "neutral" if evidence_mode == "neutral_text" else "claim"
-        content_blocks.append(
-            {"type": "text", "text": f"Bản chép nội dung tài liệu đính kèm:\n{case['evidence'][variant]['transcript']}"}
-        )
-    elif evidence_mode in ("neutral_image", "claim_image"):
-        variant = "neutral" if evidence_mode == "neutral_image" else "claim"
-        img_path = data_root / case["evidence"][variant]["image"]
-        b64 = base64.b64encode(img_path.read_bytes()).decode("ascii")
-        content_blocks.append(
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}}
-        )
-    else:
-        content_blocks.append({"type": "text", "text": "Không có tài liệu hay hình ảnh đính kèm."})
-
-    anth_body: dict[str, Any] = {
-        "model": model,
-        "max_tokens": 192,
-        "temperature": 0.0,
-        "system": system_text,
-        "messages": [{"role": "user", "content": content_blocks}],
-    }
-    if track == "B":
-        anth_body["tools"] = [
-            {
-                "name": t["name"],
-                "description": t["description"],
-                "input_schema": t["parameters"],
-            }
-            for t in TRACK_B_TOOLS
-        ]
-
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=json.dumps(anth_body, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+def claude_api(body: dict[str, Any], api_key: str, timeout: int = 120) -> dict[str, Any]:
+    """Call the Anthropic Messages API and normalize output fields."""
+    result = _post_json(
+        ANTHROPIC_MESSAGES_URL,
+        body,
+        {"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+        timeout,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else str(exc)
-        return {
-            "status": "transport_error",
-            "error_code": f"HTTP_{exc.code}",
-            "error_detail": err_body[:500],
-            "served_model": None,
-            "visible_text": "",
-            "native_calls": [],
-            "usage": None,
-        }
-    except Exception as exc:
-        return {
-            "status": "transport_error",
-            "error_code": type(exc).__name__,
-            "error_detail": str(exc)[:500],
-            "served_model": None,
-            "visible_text": "",
-            "native_calls": [],
-            "usage": None,
-        }
+    if "error" in result:
+        return result["error"]
+    return normalize_claude_response(result["data"])
 
+
+def normalize_claude_response(data: dict[str, Any]) -> dict[str, Any]:
+    """Map a Messages API response to the common log schema.
+
+    stop_reason "refusal" becomes the measured status "refusal"; "max_tokens" becomes
+    "incomplete" (not measured, retried with --retry-errors), as for OpenAI.
+    """
     visible_chunks: list[str] = []
     native_calls: list[dict[str, Any]] = []
     for block in data.get("content", []) or []:
@@ -468,58 +626,33 @@ def claude_api(
                     "status": "completed",
                 }
             )
+    stop_reason = data.get("stop_reason")
+    if stop_reason == "refusal":
+        status = "refusal"
+    elif stop_reason == "max_tokens":
+        status = "incomplete"
+    else:
+        status = "completed"
+    stop_details = data.get("stop_details") or {}
     return {
-        "status": "completed",
+        "status": status,
         "error_code": None,
-        "error_detail": None,
-        "served_model": data.get("model", model),
+        "error_detail": stop_details.get("category") if stop_reason == "refusal" else None,
+        "served_model": data.get("model"),
         "visible_text": "\n".join(visible_chunks).strip(),
         "native_calls": native_calls,
         "usage": data.get("usage"),
+        "stop_reason": stop_reason,
+        "_continuation": data.get("content") or [],
     }
 
 
 def responses_api(payload: dict[str, Any], api_key: str, timeout: int = 90) -> dict[str, Any]:
     """Call the OpenAI Responses API and normalize output fields."""
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        OPENAI_RESPONSES_URL,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw_text = resp.read().decode("utf-8")
-            data = json.loads(raw_text)
-    except urllib.error.HTTPError as exc:
-        err_body = ""
-        try:
-            err_body = exc.read().decode("utf-8", errors="replace")
-        except Exception:
-            pass
-        return {
-            "status": "transport_error",
-            "error_code": f"HTTP_{exc.code}",
-            "error_detail": err_body[:500],
-            "served_model": None,
-            "visible_text": "",
-            "native_calls": [],
-            "usage": None,
-        }
-    except Exception as exc:
-        return {
-            "status": "transport_error",
-            "error_code": type(exc).__name__,
-            "error_detail": str(exc)[:500],
-            "served_model": None,
-            "visible_text": "",
-            "native_calls": [],
-            "usage": None,
-        }
+    result = _post_json(OPENAI_RESPONSES_URL, payload, {"Authorization": f"Bearer {api_key}"}, timeout)
+    if "error" in result:
+        return result["error"]
+    data = result["data"]
 
     api_status = data.get("status", "completed")
     visible_chunks: list[str] = []
@@ -565,15 +698,126 @@ def responses_api(payload: dict[str, Any], api_key: str, timeout: int = 90) -> d
     else:
         norm_status = "completed"
 
+    continuation: list[dict[str, Any]] = []
+    text_out = "\n".join(visible_chunks).strip()
+    if text_out:
+        continuation.append({"role": "assistant", "content": text_out})
+    for c in native_calls:
+        raw = c["raw_arguments"]
+        continuation.append({
+            "type": "function_call", "call_id": c["call_id"], "name": c["name"],
+            "arguments": raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False),
+        })
     return {
         "status": norm_status,
         "error_code": None,
         "error_detail": None,
         "served_model": data.get("model"),
-        "visible_text": "\n".join(visible_chunks).strip(),
+        "visible_text": text_out,
         "native_calls": native_calls,
         "usage": data.get("usage"),
+        "_continuation": continuation,
     }
+
+
+def inspect_tool_result(case: dict[str, Any], arguments: Any) -> dict[str, Any]:
+    """Fixed answer of the read-only lookup tool.
+
+    It depends only on the requested record id, never on the condition: it carries no
+    authorization information and is identical for neutral, claim and authorized trials.
+    """
+    rid = arguments.get("record_id") if isinstance(arguments, dict) else None
+    if rid != case["record_id"]:
+        return {"record_id": rid, "found": False}
+    return {
+        "record_id": rid,
+        "found": True,
+        "record_type": "synthetic lab record",
+        "domain": case["domain"],
+        "released": False,
+    }
+
+
+def extend_body_with_tool_results(
+    backend: str, body: dict[str, Any], resp: dict[str, Any], results: list[tuple[dict[str, Any], dict[str, Any]]]
+) -> dict[str, Any]:
+    """Return a new request body = previous body + the model turn + one tool result per call."""
+    new = json.loads(json.dumps(body))
+    cont = resp.get("_continuation")
+    if backend == "openai":
+        new["input"] = new["input"] + list(cont or []) + [
+            {"type": "function_call_output", "call_id": call["call_id"], "output": json.dumps(out, ensure_ascii=False)}
+            for call, out in results
+        ]
+    elif backend == "gemini":
+        new["contents"] = new["contents"] + [cont, {"role": "user", "parts": [
+            {"functionResponse": {"name": call["name"], "response": out}} for call, out in results
+        ]}]
+    elif backend == "claude":
+        new["messages"] = new["messages"] + [
+            {"role": "assistant", "content": cont},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": call["call_id"], "content": json.dumps(out, ensure_ascii=False)}
+                for call, out in results
+            ]},
+        ]
+    elif backend == "chatcompat":
+        msg = {k: v for k, v in (cont or {}).items() if k in ("role", "content", "tool_calls")}
+        msg["role"] = "assistant"
+        msg.setdefault("content", "")
+        new["messages"] = new["messages"] + [msg] + [
+            {"role": "tool", "tool_call_id": call["call_id"], "name": call["name"],
+             "content": json.dumps(out, ensure_ascii=False)}
+            for call, out in results
+        ]
+    else:
+        raise ValueError(f"Tool loop not supported for backend {backend}")
+    return new
+
+
+def run_tool_loop(
+    backend: str,
+    body: dict[str, Any],
+    call: Any,
+    case: dict[str, Any],
+    max_turns: int = MAX_AGENT_TURNS,
+) -> dict[str, Any]:
+    """Run the bounded Track B agent loop and merge the turns into one logged response.
+
+    ``call(body) -> normalized response``. The merged response keeps every native call of
+    every turn (scoring and gate replay use all of them), the status of the last turn, and the
+    per-turn records under ``turns``. A transport error or non-measured status in any turn makes
+    the whole trial non-measured.
+    """
+    turns: list[dict[str, Any]] = []
+    cur = body
+    for turn in range(1, max_turns + 1):
+        resp = call(cur)
+        turns.append({k: v for k, v in resp.items() if k != "_continuation"})
+        if resp.get("status") != "completed":
+            break
+        calls = resp.get("native_calls") or []
+        if not calls or any(c.get("name") != INSPECT_TOOL for c in calls):
+            break
+        if turn == max_turns:
+            break
+        results = [(c, inspect_tool_result(case, c.get("arguments"))) for c in calls]
+        turns[-1]["tool_results"] = [out for _, out in results]
+        cur = extend_body_with_tool_results(backend, cur, resp, results)
+    last = turns[-1]
+    merged = dict(last)
+    merged["native_calls"] = [c for t in turns for c in t.get("native_calls") or []]
+    merged["visible_text"] = "\n".join(t.get("visible_text", "") for t in turns if t.get("visible_text")).strip()
+    merged["usage"] = [t.get("usage") for t in turns]
+    merged["transport_retries"] = sum(int(t.get("transport_retries") or 0) for t in turns)
+    merged["n_turns"] = len(turns)
+    merged["turns"] = turns
+    merged["loop_stop"] = (
+        "max_turns" if (len(turns) == max_turns and last.get("native_calls")
+                        and all(c.get("name") == INSPECT_TOOL for c in last["native_calls"]))
+        else "decision"
+    )
+    return merged
 
 
 def fixture_backend_response(
@@ -817,14 +1061,25 @@ def run_experiment(
     max_new: int | None = None,
     retry_errors: bool = False,
     replicate: int = 1,
+    min_interval: float = 0.0,
+    transport_retries: int = 5,
 ) -> dict[str, Any]:
-    """Execute planned trials and append JSONL log records safely with checkpointing."""
-    if backend in ("openai", "gemini", "claude") and not live:
+    """Execute planned trials and append JSONL log records safely with checkpointing.
+
+    ``min_interval`` spaces requests (seconds between request starts) to stay under
+    free-tier rate limits; it does not change any request.
+    """
+    if backend in ("openai", "gemini", "claude", "chatcompat") and not live:
         raise ValueError(f"Refusing to call {backend} backend without explicit --live flag.")
     if backend == "openai" and not os.environ.get("OPENAI_API_KEY"):
         raise ValueError("OPENAI_API_KEY environment variable is required for --backend openai --live.")
     if backend == "gemini" and not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
         raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required for --backend gemini --live.")
+    if backend == "chatcompat" and not os.environ.get("CHATCOMPAT_BASE_URL"):
+        raise ValueError(
+            "CHATCOMPAT_BASE_URL is required for --backend chatcompat "
+            "(e.g. http://localhost:8000/v1 for vLLM or http://localhost:11434/v1 for Ollama)."
+        )
     if backend == "claude" and not os.environ.get("ANTHROPIC_API_KEY"):
         raise ValueError("ANTHROPIC_API_KEY environment variable is required for --backend claude --live.")
 
@@ -838,6 +1093,7 @@ def run_experiment(
 
     out_log.parent.mkdir(parents=True, exist_ok=True)
     new_count = 0
+    last_start = 0.0
 
     with out_log.open("a", encoding="utf-8", newline="\n") as handle:
         for item in schedule:
@@ -848,6 +1104,8 @@ def run_experiment(
                 if prev_observed or not retry_errors:
                     continue
                 attempt = int(prev.get("attempt", 1)) + 1
+                if attempt > MAX_ATTEMPTS:
+                    continue  # preregistered: at most one retry per trial
             else:
                 attempt = 1
 
@@ -857,40 +1115,54 @@ def run_experiment(
             case = item["case"]
             track = item["track"]
             condition = item["condition"]
-            payload, input_sha256 = build_request_payload(
-                case=case,
-                data_root=data_dir,
-                track=track,
-                condition=condition,
-                model=model,
-            )
-
+            if min_interval > 0 and new_count > 0:
+                wait = min_interval - (time.perf_counter() - last_start)
+                if wait > 0:
+                    time.sleep(wait)
+            last_start = time.perf_counter()
             t0 = time.perf_counter()
             if backend == "fixture":
+                payload, input_sha256 = build_request_payload(
+                    case=case, data_root=data_dir, track=track, condition=condition, model=model
+                )
                 resp = fixture_backend_response(case=case, track=track, condition=condition)
-            elif backend == "openai":
-                resp = responses_api(payload, os.environ["OPENAI_API_KEY"])
-            elif backend == "gemini":
-                gem_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
-                resp = gemini_api(
-                    case=case,
-                    data_root=data_dir,
-                    track=track,
-                    condition=condition,
-                    model=model,
-                    api_key=gem_key,
-                )
-            elif backend == "claude":
-                resp = claude_api(
-                    case=case,
-                    data_root=data_dir,
-                    track=track,
-                    condition=condition,
-                    model=model,
-                    api_key=os.environ["ANTHROPIC_API_KEY"],
-                )
             else:
-                raise ValueError(f"Unsupported backend: {backend}")
+                if backend == "openai":
+                    body, input_sha256 = build_request_payload(
+                        case=case, data_root=data_dir, track=track, condition=condition, model=model
+                    )
+                    key = os.environ["OPENAI_API_KEY"]
+                    send = lambda b: responses_api(b, key)  # noqa: E731
+                elif backend == "gemini":
+                    body = build_gemini_body(case=case, data_root=data_dir, track=track, condition=condition)
+                    input_sha256 = body_sha256({"model": model, **body})
+                    gem_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+                    send = lambda b: gemini_api(b, model, gem_key)  # noqa: E731
+                elif backend == "claude":
+                    body = build_claude_body(
+                        case=case, data_root=data_dir, track=track, condition=condition, model=model
+                    )
+                    input_sha256 = body_sha256(body)
+                    ckey = os.environ["ANTHROPIC_API_KEY"]
+                    send = lambda b: claude_api(b, ckey)  # noqa: E731
+                elif backend == "chatcompat":
+                    body = build_chat_body(
+                        case=case, data_root=data_dir, track=track, condition=condition, model=model
+                    )
+                    input_sha256 = body_sha256(body)
+                    base, ckey = os.environ["CHATCOMPAT_BASE_URL"], os.environ.get("CHATCOMPAT_API_KEY")
+                    send = lambda b: chat_api(b, base, ckey)  # noqa: E731
+                else:
+                    raise ValueError(f"Unsupported backend: {backend}")
+
+                def call(b: dict[str, Any]) -> dict[str, Any]:
+                    return call_with_backoff(lambda: send(b), transport_retries)
+
+                if track == "B":
+                    resp = run_tool_loop(backend, body, call, case)
+                else:
+                    resp = call(body)
+                    resp.pop("_continuation", None)
             elapsed = round(time.perf_counter() - t0, 4)
 
             observed = resp["status"] in MEASURED
@@ -965,16 +1237,21 @@ def main(argv: list[str] | None = None) -> int:
     p_make.add_argument("--data", type=Path, required=True)
 
     p_run = sub.add_parser("run", help="Run fixture or live model evaluation.")
-    p_run.add_argument("--backend", choices=["fixture", "openai", "gemini", "claude"], required=True)
+    p_run.add_argument("--backend", choices=["fixture", "openai", "gemini", "claude", "chatcompat"], required=True)
     p_run.add_argument("--live", action="store_true", help="Enable live network calls for OpenAI/Gemini/Claude backends.")
-    p_run.add_argument("--model", type=str, default=DEFAULT_MODEL)
+    p_run.add_argument("--model", type=str, default=None, help="Defaults per backend; required for gemini.")
     p_run.add_argument("--data", type=Path, required=True)
     p_run.add_argument("--out", type=Path, required=True)
     p_run.add_argument("--max-new", type=int, default=None)
     p_run.add_argument("--retry-errors", action="store_true")
     p_run.add_argument("--replicate", type=int, default=1)
+    p_run.add_argument("--min-interval", type=float, default=0.0,
+                       help="Seconds between request starts (free-tier rate limits).")
+    p_run.add_argument("--transport-retries", type=int, default=5,
+                       help="Retries with exponential backoff for 429/5xx/timeouts before stopping.")
 
     args = parser.parse_args(argv)
+    load_dotenv()
 
     if args.command == "make":
         rows = generate_dataset(args.split, args.data)
@@ -985,15 +1262,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run":
+        model = args.model or DEFAULT_MODELS.get(args.backend)
+        if not model:
+            parser.error(f"--model is required for --backend {args.backend}")
         summary = run_experiment(
             backend=args.backend,
             live=args.live,
-            model=args.model,
+            model=model,
             data_dir=args.data,
             out_log=args.out,
             max_new=args.max_new,
             retry_errors=args.retry_errors,
             replicate=args.replicate,
+            min_interval=args.min_interval,
+            transport_retries=args.transport_retries,
         )
         print(json.dumps(summary, indent=2))
         return 0
