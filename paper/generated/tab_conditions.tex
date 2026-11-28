@@ -1,15 +1,15 @@
 \begin{tabular}{llccc}
 \toprule
-Condition & Grant & Track A (canary) & Track B (tool call) & Gate replay \\
+Condition & Grant & \texttt{gpt-4.1-mini} (A / B) & \texttt{qwen3-vl:4b} (A / B) & Gate writes (M1 ; M3) \\
 \midrule
-\texttt{none\_empty} & empty & 71/120 (59.2\%) & 0/120 (0.0\%) & 0/120 unauth. \\
-\texttt{neutral\_text} & empty & 86/120 (71.7\%) & 39/120 (32.5\%) & 0/120 unauth. \\
-\texttt{claim\_text} & empty & 110/120 (91.7\%) & 104/120 (86.7\%) & 0/120 unauth. \\
-\texttt{neutral\_image} & empty & 93/120 (77.5\%) & 54/120 (45.0\%) & 0/120 unauth. \\
-\texttt{claim\_image} & empty & 96/120 (80.0\%) & 60/120 (50.0\%) & 0/120 unauth. \\
-\texttt{claim\_image\_wrong\_scope} & other & 105/120 (87.5\%) & 18/120 (15.0\%) & 0/120 unauth. \\
+\texttt{none\_empty} & empty & 0.0\% / 0.0\% & 59.2\% / 0.0\% & 0/120 ; 0/120 \\
+\texttt{neutral\_text} & empty & 0.0\% / 0.0\% & 71.7\% / 32.5\% & 0/120 ; 0/120 \\
+\texttt{claim\_text} & empty & 0.0\% / 1.7\% & 91.7\% / 86.7\% & 0/120 ; 0/120 \\
+\texttt{neutral\_image} & empty & 0.0\% / 0.0\% & 77.5\% / 45.0\% & 0/120 ; 0/120 \\
+\texttt{claim\_image} & empty & 0.0\% / 3.3\% & 80.0\% / 50.0\% & 0/120 ; 0/120 \\
+\texttt{claim\_image\_wrong\_scope} & other & 0.0\% / 5.8\% & 87.5\% / 15.0\% & 0/120 ; 0/120 \\
 \midrule
-\texttt{claim\_image\_authorized} & exact & 120/120 (100.0\%) & 120/120 (100.0\%) & 120/120 auth. \\
-\texttt{none\_authorized} & exact & 120/120 (100.0\%) & 120/120 (100.0\%) & 120/120 auth. \\
+\texttt{claim\_image\_authorized} & exact & 99.2\% / 100.0\% & 100.0\% / 100.0\% & 120/120 ; 120/120 \\
+\texttt{none\_authorized} & exact & 100.0\% / 100.0\% & 100.0\% / 100.0\% & 120/120 ; 120/120 \\
 \bottomrule
 \end{tabular}

@@ -1,6 +1,21 @@
 {
   "rater_type": "model",
   "n_items": 240,
+  "gpt41mini": {
+    "n_labelled": 240,
+    "n_unparsed": 0,
+    "accuracy": 1.0,
+    "accuracy_by_variant": {
+      "neutral": 1.0,
+      "claim": 1.0
+    },
+    "naturalness_mean": 3.42,
+    "naturalness_mean_by_variant": {
+      "neutral": 3.17,
+      "claim": 3.66
+    },
+    "errors": []
+  },
   "qwen3vl4b": {
     "n_labelled": 240,
     "n_unparsed": 0,
@@ -30,5 +45,7 @@
       "S205",
       "S228"
     ]
-  }
+  },
+  "n_both": 240,
+  "cohen_kappa": 0.8833
 }

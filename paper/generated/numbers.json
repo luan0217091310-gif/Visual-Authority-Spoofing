@@ -130,7 +130,7 @@
   },
   "zero_event_bound_pct": 11.734615615494882,
   "live_results_available": true,
-  "n_live_models": 1,
+  "n_live_models": 2,
   "mde80_pp_n120": 15.797354388205129,
   "mde80_pp_n240": 11.460070317574862
 }

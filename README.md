@@ -85,19 +85,20 @@ Visual-Authority-Spoofing/
 └── tests/test_vas.py                  # 17 unit test
 ```
 
-### Kết quả thực nghiệm xác nhận đã hoàn tất (Live Confirmatory Holdout)
+### Kết quả thực nghiệm xác nhận đã hoàn tất (Live Confirmatory Holdout — 3.840 lượt)
 
-| Mô hình | Trạng thái | Cổng `dev` (A / B) | Phép thử đọc `dev` | `holdout` xác nhận (1.920 lượt) |
+| Mô hình | Trạng thái | Cổng `dev` (A / B) | Phép thử đọc (`dev` / `holdout`) | `holdout` xác nhận (1.920 lượt / mô hình) |
 |---|---|---|---|---|
-| **M3 · `qwen3-vl:4b-instruct`** (Ollama cục bộ, Q4\_K\_M) | Hoàn tất 100% | 48/48 · 48/48 | 16/16 | Track A: $\Delta_{\text{image}} = +2{,}5\text{ pp}$ [$-5{,}8, +10{,}0$], $p_{\text{Holm}}=0{,}744$ · Track B: $\Delta_{\text{image}} = +5{,}0\text{ pp}$ [$-1{,}7, +12{,}5$], $p_{\text{Holm}}=0{,}533$ |
-| **M4 · `gemini-3.1-flash-lite`** (gói miễn phí 500 req/ngày) | Đạt cổng `dev`; đang chạy `holdout` | 48/48 · 48/48 | 16/16 | Đã ghi 151 lượt ngày 1; tiếp tục sau mốc reset hạn mức 15:00 giờ VN hằng ngày |
+| **M1 · `gpt-4.1-mini-2025-04-14`** (OpenAI Responses API) | Hoàn tất 100% | 48/48 · 48/48 | 16/16 · **48/48** | Track A: $\Delta_{\text{image}} = 0{,}0\text{ pp}$ (`0/120` vs `0/120`), $p_{\text{Holm}}=1{,}000$ · Track B: $\Delta_{\text{image}} = +3{,}3\text{ pp}$ [$+0{,}8, +5{,}8$] (`4/120` vs `0/120`), $p_{\text{Holm}}=0{,}245$ |
+| **M3 · `qwen3-vl:4b-instruct`** (Ollama cục bộ, Q4\_K\_M) | Hoàn tất 100% | 48/48 · 48/48 | 16/16 · **47/48** | Track A: $\Delta_{\text{image}} = +2{,}5\text{ pp}$ [$-5{,}8, +10{,}0$] (`96/120` vs `93/120`), $p_{\text{Holm}}=0{,}744$ · Track B: $\Delta_{\text{image}} = +5{,}0\text{ pp}$ [$-1{,}7, +12{,}5$] (`60/120` vs `54/120`), $p_{\text{Holm}}=0{,}533$ |
+| **M4 · `gemini-3.1-flash-lite`** (gói miễn phí 500 req/ngày) | Đạt cổng `dev`; đang chạy `holdout` | 48/48 · 48/48 | 16/16 · chờ sau holdout | Đã ghi **501/1.920** lượt `completed` sau 2 ngày miễn phí (tiếp tục sau 15:00 giờ VN hằng ngày) |
 
-- **Phát hiện chính trên M3 (`runs/live_holdout_qwen3vl4b_report.json`):**
-  - **Thiên lệch hiện diện ảnh (Track B):** `none_empty` = **0/120 (0%)**, nhưng chỉ cần đính kèm ảnh trung tính (`neutral_image`) đã nhảy lên **54/120 (45,0%)** và `claim_image` = **60/120 (50,0%)**. Trong khi đó ở văn bản thuần, `claim_text` nhảy từ **32,5%** lên **86,7%** (**+54,2 pp**, tương tác phương thức **-49,2 pp**).
-  - **Leo thang đa lượt sau tra cứu chỉ đọc (Track B):** toàn bộ **275/275** lời gọi `release_record` trái phép xảy ra ở lượt 2–3 (0 lượt ở lượt 1) ngay sau khi gọi `inspect_record_metadata`; cổng kiểm quyền tất định (`replay_with_gate`) chặn **275/275 → 0** và giữ nguyên **240/240 (100%)** thao tác hợp lệ.
-  - **Vọng mã bí mật khi từ chối (Track A):** toàn bộ **561/561 (100%)** lượt lộ `canary` trái phép đều nằm trong câu trả lời mở đầu bằng từ chối nhưng chép lại chuỗi mã bí mật.
-  - **Độ ổn định (`dev` rep 1 vs rep 2):** 86,4% (165/191) ở Track A và 93,8% (180/192) ở Track B.
-  - **Model rater mù hậu holdout (240 ảnh):** 94,2% (226/240; `claim` 98,3%, `neutral` 90,0%).
+- **Cơ chế lỗi trái ngược giữa hai mô hình đã hoàn tất (`runs/live_holdout_*_report.json`):**
+  - **M1 (`gpt-4.1-mini-2025-04-14`):** `0/720` lộ canary ở Track A và `0/360` lỗi nền ở các điều kiện không có tuyên bố (`none_empty`, `neutral_text`, `neutral_image`). Toàn bộ **13/13** lệnh `release_record` trái phép đều xảy ra **trực tiếp ở lượt 1** duy nhất khi có câu phê duyệt — cao nhất ở `claim_image_wrong_scope` (**7/120 = 5,8%**, nhầm quyền xem thành quyền phát hành), tiếp đến `claim_image` (**4/120 = 3,3%**) và `claim_text` (**2/120 = 1,7%**).
+  - **M3 (`qwen3-vl:4b-instruct`):** trên Track B, `none_empty` = **0/120 (0%)**, nhưng đính kèm ảnh trung tính (`neutral_image`) đã kéo lỗi lên **54/120 (45,0%)** và văn bản thuần (`claim_text`) vọt lên **104/120 (86,7%, +54,2 pp)**; toàn bộ **275/275** lệnh trái phép xảy ra theo cơ chế **leo thang lượt 2–3 sau khi gọi `inspect_record_metadata`** (`0` ở lượt 1); ở Track A, **561/561 (100%)** lượt lộ `canary` là **vọng mã bí mật trong câu từ chối**.
+  - **Hiệu lực của cổng kiểm quyền tất định (Gate Replay, Track B):** chặn toàn bộ **288/288** đề xuất ghi trái phép (`13` của M1 + `275` của M3 $\rightarrow$ `0`), giữ nguyên **100%** thao tác hợp lệ (`240/240` trên cả hai mô hình).
+  - **Model raters mù hậu holdout (240 ảnh, M1 vs M3):** M1 **100,0%** (`240/240`, điểm tự nhiên 3,42), M3 **94,2%** (`226/240`, điểm tự nhiên 3,85), độ đồng thuận liên mô hình **Cohen's $\kappa = 0{,}88$**.
+  - **Độ ổn định `dev` (rep 1 vs rep 2):** M1 **100,0%** Track A / **98,4%** Track B; M3 **86,4%** Track A / **93,8%** Track B.
 
 ---
 

@@ -232,47 +232,55 @@ def write_results_table(reps: list[dict[str, Any]]) -> None:
     )
 
 
-def write_conditions_table(rep: dict[str, Any] | None) -> None:
-    """Full 8-condition breakdown for the primary completed confirmatory model (Track A + Track B + gate)."""
+def write_conditions_table(reps: list[dict[str, Any]]) -> None:
+    """Full 8-condition breakdown for completed confirmatory models (Track A, Track B, and gated replay)."""
     cond_order = (
-        ("none_empty", "empty", "none"),
-        ("neutral_text", "empty", "pending text"),
-        ("claim_text", "empty", "approval text"),
-        ("neutral_image", "empty", "pending image"),
-        ("claim_image", "empty", "approval image"),
-        ("claim_image_wrong_scope", "other", "approval image"),
-        ("claim_image_authorized", "exact", "approval image"),
-        ("none_authorized", "exact", "none"),
+        ("none_empty", "empty"),
+        ("neutral_text", "empty"),
+        ("claim_text", "empty"),
+        ("neutral_image", "empty"),
+        ("claim_image", "empty"),
+        ("claim_image_wrong_scope", "other"),
+        ("claim_image_authorized", "exact"),
+        ("none_authorized", "exact"),
     )
-    if rep is None:
-        rows = [
-            f"\\texttt{{{tex_escape(cid)}}} & {grant} & {ev} & {PENDING} & {PENDING} & {PENDING} \\\\"
-            for cid, grant, ev in cond_order
-        ]
-    else:
+    by_model = {
+        (rep.get("served_models") or rep.get("requested_models") or ["?"])[0]: rep
+        for rep in reps
+    }
+    gpt = by_model.get("gpt-4.1-mini-2025-04-14")
+    qwen = by_model.get("qwen3-vl:4b-instruct")
+
+    def _pair(rep: dict[str, Any] | None, cid: str) -> str:
+        if rep is None:
+            return PENDING
         rates = {(r["track"], r["condition_id"]): r for r in rep["condition_rates"]}
-        rows = []
-        for cid, grant, ev in cond_order:
-            ra = rates[("A", cid)]
-            rb = rates[("B", cid)]
-            a_cell = f"{ra['n_event']}/{ra['n_observed']} ({100.0 * ra['event_rate']:.1f}\\%)"
-            b_cell = f"{rb['n_event']}/{rb['n_observed']} ({100.0 * rb['event_rate']:.1f}\\%)"
-            if grant == "exact":
-                gate_cell = f"{rb['n_authorized_mock_write_with_gate']}/{rb['n_observed']} auth."
-            else:
-                gate_cell = f"{rb['n_unauthorized_mock_write_with_gate']}/{rb['n_observed']} unauth."
-            rows.append(
-                f"\\texttt{{{tex_escape(cid)}}} & {grant} & {a_cell} & {b_cell} & {gate_cell} \\\\"
-            )
+        ra, rb = rates[("A", cid)], rates[("B", cid)]
+        return f"{100.0 * ra['event_rate']:.1f}\\% / {100.0 * rb['event_rate']:.1f}\\%"
+
+    def _gate(rep: dict[str, Any] | None, cid: str, grant: str) -> str:
+        if rep is None:
+            return PENDING
+        rates = {(r["track"], r["condition_id"]): r for r in rep["condition_rates"]}
+        rb = rates[("B", cid)]
+        num = rb["n_authorized_mock_write_with_gate"] if grant == "exact" else rb["n_unauthorized_mock_write_with_gate"]
+        return f"{num}/{rb['n_observed']}"
+
+    rows = []
+    for cid, grant in cond_order:
+        g_cell = f"{_gate(gpt, cid, grant)} ; {_gate(qwen, cid, grant)}"
+        rows.append(
+            f"\\texttt{{{tex_escape(cid)}}} & {grant} & {_pair(gpt, cid)} & {_pair(qwen, cid)} & {g_cell} \\\\"
+        )
     (OUT / "tab_conditions.tex").write_text(
         "\\begin{tabular}{llccc}\n\\toprule\n"
-        "Condition & Grant & Track A (canary) & Track B (tool call) & Gate replay \\\\\n"
+        "Condition & Grant & \\texttt{gpt-4.1-mini} (A / B) & \\texttt{qwen3-vl:4b} (A / B) & Gate writes (M1 ; M3) \\\\\n"
         "\\midrule\n" + "\n".join(rows[:6]) + "\n\\midrule\n" + "\n".join(rows[6:]) + "\n\\bottomrule\n\\end{tabular}\n",
         encoding="utf-8",
     )
 
 
-def results_macros(rep: dict[str, Any] | None) -> dict[str, str]:
+def results_macros(rep: dict[str, Any] | None, prefix: str = "res") -> dict[str, str]:
     m: dict[str, str] = {}
     for track in ("A", "B"):
         t = track
@@ -282,9 +290,9 @@ def results_macros(rep: dict[str, Any] | None) -> dict[str, str]:
                 "Inter", "InterCI", "Scope", "ScopeCI", "TextEst", "TextCI",
                 "NoneEmpty", "NoneEmptyPct", "ClaimText", "ClaimTextPct",
                 "NeutralText", "NeutralTextPct", "WrongScope", "WrongScopePct",
-                "AuthClaim", "AuthNone",
+                "AuthClaim", "AuthClaimPct", "AuthNone", "AuthNonePct",
             ):
-                m[f"res{t}{k}"] = PENDING
+                m[f"{prefix}{t}{k}"] = PENDING
             continue
         tr = rep["tracks"][track]
         prim = tr["primary_image_claim_effect"]
@@ -297,28 +305,28 @@ def results_macros(rep: dict[str, Any] | None) -> dict[str, str]:
             r = rates[(track, cid)]
             return f"{r['n_event']}/{r['n_observed']}", fmt(100.0 * r["event_rate"])
 
-        m[f"res{t}Claim"], m[f"res{t}ClaimPct"] = _rc("claim_image")
-        m[f"res{t}Neutral"], m[f"res{t}NeutralPct"] = _rc("neutral_image")
-        m[f"res{t}NoneEmpty"], m[f"res{t}NoneEmptyPct"] = _rc("none_empty")
-        m[f"res{t}ClaimText"], m[f"res{t}ClaimTextPct"] = _rc("claim_text")
-        m[f"res{t}NeutralText"], m[f"res{t}NeutralTextPct"] = _rc("neutral_text")
-        m[f"res{t}WrongScope"], m[f"res{t}WrongScopePct"] = _rc("claim_image_wrong_scope")
-        m[f"res{t}AuthClaim"], _ = _rc("claim_image_authorized")
-        m[f"res{t}AuthNone"], _ = _rc("none_authorized")
+        m[f"{prefix}{t}Claim"], m[f"{prefix}{t}ClaimPct"] = _rc("claim_image")
+        m[f"{prefix}{t}Neutral"], m[f"{prefix}{t}NeutralPct"] = _rc("neutral_image")
+        m[f"{prefix}{t}NoneEmpty"], m[f"{prefix}{t}NoneEmptyPct"] = _rc("none_empty")
+        m[f"{prefix}{t}ClaimText"], m[f"{prefix}{t}ClaimTextPct"] = _rc("claim_text")
+        m[f"{prefix}{t}NeutralText"], m[f"{prefix}{t}NeutralTextPct"] = _rc("neutral_text")
+        m[f"{prefix}{t}WrongScope"], m[f"{prefix}{t}WrongScopePct"] = _rc("claim_image_wrong_scope")
+        m[f"{prefix}{t}AuthClaim"], m[f"{prefix}{t}AuthClaimPct"] = _rc("claim_image_authorized")
+        m[f"{prefix}{t}AuthNone"], m[f"{prefix}{t}AuthNonePct"] = _rc("none_authorized")
 
-        m[f"res{t}Pairs"] = str(prim["n_complete_pairs"])
-        m[f"res{t}Est"] = fmt_signed(prim["estimate_pp"]) if prim["estimate_pp"] is not None else "n/a"
-        m[f"res{t}CI"] = fmt_ci(prim["cluster_percentile_ci_95_pp"])
+        m[f"{prefix}{t}Pairs"] = str(prim["n_complete_pairs"])
+        m[f"{prefix}{t}Est"] = fmt_signed(prim["estimate_pp"]) if prim["estimate_pp"] is not None else "n/a"
+        m[f"{prefix}{t}CI"] = fmt_ci(prim["cluster_percentile_ci_95_pp"])
         pr = prim.get("p_raw")
         ph = prim.get("p_holm")
-        m[f"res{t}PRaw"] = "n/a" if pr is None else ("$<$0.001" if pr < 0.001 else f"{pr:.3f}")
-        m[f"res{t}PHolm"] = "n/a" if ph is None else ("$<$0.001" if ph < 0.001 else f"{ph:.3f}")
-        m[f"res{t}TextEst"] = fmt_signed(txt["estimate_pp"]) if txt["estimate_pp"] is not None else "n/a"
-        m[f"res{t}TextCI"] = fmt_ci(txt["cluster_percentile_ci_95_pp"])
-        m[f"res{t}Inter"] = fmt_signed(inter_obj["estimate_pp"]) if inter_obj["estimate_pp"] is not None else "n/a"
-        m[f"res{t}InterCI"] = fmt_ci(inter_obj["cluster_percentile_ci_95_pp"])
-        m[f"res{t}Scope"] = fmt_signed(scope_obj["estimate_pp"]) if scope_obj["estimate_pp"] is not None else "n/a"
-        m[f"res{t}ScopeCI"] = fmt_ci(scope_obj["cluster_percentile_ci_95_pp"])
+        m[f"{prefix}{t}PRaw"] = "n/a" if pr is None else ("$<$0.001" if pr < 0.001 else f"{pr:.3f}")
+        m[f"{prefix}{t}PHolm"] = "n/a" if ph is None else ("$<$0.001" if ph < 0.001 else f"{ph:.3f}")
+        m[f"{prefix}{t}TextEst"] = fmt_signed(txt["estimate_pp"]) if txt["estimate_pp"] is not None else "n/a"
+        m[f"{prefix}{t}TextCI"] = fmt_ci(txt["cluster_percentile_ci_95_pp"])
+        m[f"{prefix}{t}Inter"] = fmt_signed(inter_obj["estimate_pp"]) if inter_obj["estimate_pp"] is not None else "n/a"
+        m[f"{prefix}{t}InterCI"] = fmt_ci(inter_obj["cluster_percentile_ci_95_pp"])
+        m[f"{prefix}{t}Scope"] = fmt_signed(scope_obj["estimate_pp"]) if scope_obj["estimate_pp"] is not None else "n/a"
+        m[f"{prefix}{t}ScopeCI"] = fmt_ci(scope_obj["cluster_percentile_ci_95_pp"])
     return m
 
 
@@ -332,9 +340,11 @@ def mechanism_and_ancillary_macros() -> dict[str, str]:
 
     # 1. Reading probes
     for key, split, fname in (
+        ("ProbeDevGpt", "dev", "probe_dev_gpt41mini.jsonl"),
+        ("ProbeHoldGpt", "holdout", "probe_holdout_gpt41mini.jsonl"),
         ("ProbeDevQwen", "dev", "probe_dev_qwen3vl4b.jsonl"),
-        ("ProbeDevGem", "dev", "probe_dev_gemini31fl.jsonl"),
         ("ProbeHoldQwen", "holdout", "probe_holdout_qwen3vl4b.jsonl"),
+        ("ProbeDevGem", "dev", "probe_dev_gemini31fl.jsonl"),
         ("ProbeHoldGem", "holdout", "probe_holdout_gemini31fl.jsonl"),
     ):
         p = ROOT / "runs" / fname
@@ -347,7 +357,11 @@ def mechanism_and_ancillary_macros() -> dict[str, str]:
             m[f"{key}Pct"] = PENDING
 
     # 2. Dev gates (authorized controls)
-    for tag, fname in (("Qwen", "live_dev_qwen3vl4b_report.json"), ("Gem", "live_dev_gemini31fl_report.json")):
+    for tag, fname in (
+        ("Gpt", "live_dev_gpt41mini_report.json"),
+        ("Qwen", "live_dev_qwen3vl4b_report.json"),
+        ("Gem", "live_dev_gemini31fl_report.json"),
+    ):
         p = ROOT / "runs" / fname
         if p.exists():
             rep = json.loads(p.read_text(encoding="utf-8"))
@@ -361,38 +375,42 @@ def mechanism_and_ancillary_macros() -> dict[str, str]:
             m[f"DevGate{tag}B"] = PENDING
 
     # 3. Run-to-run stability on dev (rep 1 vs rep 2)
-    qdev = ROOT / "runs" / "live_dev_qwen3vl4b.jsonl"
-    if qdev.exists():
-        st = stability(read_jsonl(qdev))
-        for tr in ("A", "B"):
-            if st[tr]["n_paired_trials"]:
-                m[f"StabQwen{tr}"] = fmt(100.0 * st[tr]["agreement"])
-                m[f"StabQwen{tr}Frac"] = f"{st[tr]['n_agree']}/{st[tr]['n_paired_trials']}"
-            else:
-                m[f"StabQwen{tr}"] = PENDING
-                m[f"StabQwen{tr}Frac"] = PENDING
+    for tag, fname in (("Gpt", "live_dev_gpt41mini.jsonl"), ("Qwen", "live_dev_qwen3vl4b.jsonl")):
+        dp = ROOT / "runs" / fname
+        if dp.exists():
+            st = stability(read_jsonl(dp))
+            for tr in ("A", "B"):
+                if st[tr]["n_paired_trials"]:
+                    m[f"Stab{tag}{tr}"] = fmt(100.0 * st[tr]["agreement"])
+                    m[f"Stab{tag}{tr}Frac"] = f"{st[tr]['n_agree']}/{st[tr]['n_paired_trials']}"
+                else:
+                    m[f"Stab{tag}{tr}"] = PENDING
+                    m[f"Stab{tag}{tr}Frac"] = PENDING
 
-    # 4. Qwen holdout mechanistic stats (refusal-time echo & Track B turn escalation & gate replay)
-    qhold = ROOT / "runs" / "live_holdout_qwen3vl4b.jsonl"
-    if qhold.exists():
-        latest = {r["trial_key"]: r for r in read_jsonl(qhold)}
-        refusal_pat = re.compile(
-            r"từ chối|không thể|không được phép|không có quyền|thiếu quyền|chưa có quyền|không được cấp", re.I
-        )
+    # 4. Mechanistic holdout stats for both completed models
+    refusal_pat = re.compile(
+        r"từ chối|không thể|không được phép|không có quyền|thiếu quyền|chưa có quyền|không được cấp", re.I
+    )
+    total_conf_trials = 0
+    for tag, fname in (("Gpt", "live_holdout_gpt41mini.jsonl"), ("Qwen", "live_holdout_qwen3vl4b.jsonl")):
+        hp = ROOT / "runs" / fname
+        if not hp.exists():
+            continue
+        latest = {r["trial_key"]: r for r in read_jsonl(hp)}
         unauth_a = [
             r for r in latest.values()
             if r["track"] == "A" and r["grant_state"] != "exact" and r["score"].get("event") == 1
         ]
         refusal_echo = [r for r in unauth_a if refusal_pat.search(r["response"].get("visible_text", ""))]
-        m["QwenAUnauthTotal"] = str(len(unauth_a))
-        m["QwenARefusalEcho"] = str(len(refusal_echo))
+        m[f"{tag}AUnauthTotal"] = str(len(unauth_a))
+        m[f"{tag}ARefusalEcho"] = str(len(refusal_echo))
 
         b_rows = [r for r in latest.values() if r["track"] == "B"]
         b_unauth = [r for r in b_rows if r["grant_state"] != "exact"]
-        m["QwenBUnauthNoGate"] = str(sum(bool(r["score"].get("unauthorized_mock_write_no_gate")) for r in b_rows))
-        m["QwenBUnauthWithGate"] = str(sum(bool(r["score"].get("unauthorized_mock_write_with_gate")) for r in b_rows))
-        m["QwenBAuthWithGate"] = str(sum(bool(r["score"].get("authorized_mock_write_with_gate")) for r in b_rows))
-        m["QwenBMalformed"] = str(sum(bool(r["score"].get("malformed_target_call")) for r in b_rows))
+        m[f"{tag}BUnauthNoGate"] = str(sum(bool(r["score"].get("unauthorized_mock_write_no_gate")) for r in b_rows))
+        m[f"{tag}BUnauthWithGate"] = str(sum(bool(r["score"].get("unauthorized_mock_write_with_gate")) for r in b_rows))
+        m[f"{tag}BAuthWithGate"] = str(sum(bool(r["score"].get("authorized_mock_write_with_gate")) for r in b_rows))
+        m[f"{tag}BMalformed"] = str(sum(bool(r["score"].get("malformed_target_call")) for r in b_rows))
 
         t1 = t2 = t3 = 0
         for r in b_unauth:
@@ -407,14 +425,23 @@ def mechanism_and_ancillary_macros() -> dict[str, str]:
                     else:
                         t3 += 1
                     break
-        m["QwenBUnauthTurnOne"] = str(t1)
-        m["QwenBUnauthTurnTwo"] = str(t2)
-        m["QwenBUnauthTurnThree"] = str(t3)
+        m[f"{tag}BUnauthTurnOne"] = str(t1)
+        m[f"{tag}BUnauthTurnTwo"] = str(t2)
+        m[f"{tag}BUnauthTurnThree"] = str(t3)
+        m[f"{tag}BUnauthInspectStopped"] = str(
+            sum(
+                r["score"].get("event") == 0
+                and any(c.get("name") == "inspect_record_metadata" for c in r["response"].get("native_calls", []))
+                for r in b_unauth
+            )
+        )
 
-        # Holdout completeness
         n_comp = sum(r["response"].get("status") == "completed" for r in latest.values())
-        m["QwenHoldCompleted"] = f"{n_comp:,}"
-        m["QwenHoldMissing"] = str(1920 - n_comp)
+        total_conf_trials += n_comp
+        m[f"{tag}HoldCompleted"] = f"{n_comp:,}"
+        m[f"{tag}HoldMissing"] = str(1920 - n_comp)
+
+    m["TotalConfirmatoryTrials"] = f"{total_conf_trials:,}"
 
     # 5. Gemini holdout progress (count of completed trials, without peeking at outcomes)
     ghold = ROOT / "runs" / "live_holdout_gemini31fl.jsonl"
@@ -431,6 +458,7 @@ def rater_macros() -> dict[str, str]:
     """Model-rater validation (tools/model_raters.py); pending until score.json exists."""
     path = ROOT / "review" / "annotation" / "model_raters" / "score.json"
     keys = (
+        "RaterGptAcc", "RaterGptNat", "RaterGptClaimNat", "RaterGptNeutralNat", "RaterGptErrors",
         "RaterGemAcc", "RaterQwenAcc", "RaterQwenClaimAcc", "RaterQwenNeutralAcc",
         "RaterQwenErrors", "RaterQwenN", "RaterKappa",
         "RaterGemNat", "RaterQwenNat", "RaterQwenClaimNat", "RaterQwenNeutralNat", "RaterN",
@@ -438,11 +466,17 @@ def rater_macros() -> dict[str, str]:
     if not path.exists():
         return {k: PENDING for k in keys}
     sc = json.loads(path.read_text(encoding="utf-8"))
-    g, q = sc.get("gemini31fl", {}), sc.get("qwen3vl4b", {})
+    gp, g, q = sc.get("gpt41mini", {}), sc.get("gemini31fl", {}), sc.get("qwen3vl4b", {})
     pct = lambda x: PENDING if x is None else fmt(100 * x)  # noqa: E731
     q_by = q.get("accuracy_by_variant") or {}
     q_nat_by = q.get("naturalness_mean_by_variant") or {}
+    gp_nat_by = gp.get("naturalness_mean_by_variant") or {}
     return {
+        "RaterGptAcc": pct(gp.get("accuracy")),
+        "RaterGptNat": PENDING if gp.get("naturalness_mean") is None else fmt(gp["naturalness_mean"], 2),
+        "RaterGptClaimNat": PENDING if gp_nat_by.get("claim") is None else fmt(gp_nat_by["claim"], 2),
+        "RaterGptNeutralNat": PENDING if gp_nat_by.get("neutral") is None else fmt(gp_nat_by["neutral"], 2),
+        "RaterGptErrors": str(len(gp.get("errors", []))) if gp else PENDING,
         "RaterGemAcc": pct(g.get("accuracy")),
         "RaterQwenAcc": pct(q.get("accuracy")),
         "RaterQwenClaimAcc": pct(q_by.get("claim")),
@@ -562,7 +596,13 @@ def main() -> int:
                 "fixExactRows": str(fdev["b_exact_rows"] + fhold["b_exact_rows"]),
             }
         )
-    m.update(results_macros(rep))
+    by_model = {
+        (r.get("served_models") or r.get("requested_models") or ["?"])[0]: r
+        for r in reps
+    }
+    m.update(results_macros(by_model.get("gpt-4.1-mini-2025-04-14"), "gpt"))
+    m.update(results_macros(by_model.get("qwen3-vl:4b-instruct"), "qwen"))
+    m.update(results_macros(rep, "res"))
 
     lines = [
         "% Generated by tools/make_paper_numbers.py. Do not edit by hand.",
@@ -573,7 +613,7 @@ def main() -> int:
     (OUT / "numbers.tex").write_text("\n".join(lines) + "\n", encoding="utf-8")
     write_tables(dev, hold)
     write_results_table(reps)
-    write_conditions_table(rep)
+    write_conditions_table(reps)
     print(json.dumps({"macros": len(m), "live_models": len(reps), "tests": tests,
                       "determinism": determ}, indent=2))
     return 0
